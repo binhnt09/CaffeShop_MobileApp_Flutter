@@ -20,6 +20,7 @@ import '../../features/manager/inventory/screens/inventory_screen.dart';
 import '../../features/manager/dashboard/screens/manager_dashboard_screen.dart';
 import '../../features/admin/menu_management/screens/global_menu_screen.dart';
 import '../../features/admin/dashboard/screens/admin_dashboard_screen.dart';
+import '../../features/admin/user_management/screens/user_management_screen.dart';
 
 class AppRouter {
   static final GoRouter router = GoRouter(
@@ -110,6 +111,10 @@ class AppRouter {
       GoRoute(
         path: '/admin/dashboard',
         builder: (context, state) => const AdminDashboardScreen(),
+      ),
+      GoRoute(
+        path: '/admin/users',
+        builder: (context, state) => const UserManagementScreen(),
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../../../../core/constants/mock_data.dart';
+import '../../../../core/network/api_service.dart';
 
 // --- EVENTS ---
 abstract class CartEvent extends Equatable {
@@ -42,6 +43,35 @@ class ApplyDiscountCoupon extends CartEvent {
   List<Object?> get props => [code];
 }
 
+class ValidateCouponFromAPI extends CartEvent {
+  final String code;
+  const ValidateCouponFromAPI(this.code);
+
+  @override
+  List<Object?> get props => [code];
+}
+
+class RemoveCoupon extends CartEvent {}
+
+class PlaceOrderEvent extends CartEvent {
+  final int branchId;
+  final String fulfillmentMode;
+  final String paymentMethod;
+  final String token;
+  final int redeemPoints;
+
+  const PlaceOrderEvent({
+    required this.branchId,
+    required this.fulfillmentMode,
+    required this.paymentMethod,
+    required this.token,
+    this.redeemPoints = 0,
+  });
+
+  @override
+  List<Object?> get props => [branchId, fulfillmentMode, paymentMethod, token, redeemPoints];
+}
+
 class ClearCart extends CartEvent {}
 
 // --- STATES ---
@@ -53,6 +83,9 @@ class CartState extends Equatable {
   final MockCoupon? appliedCoupon;
   final String? errorMessage;
   final bool isCouponValid;
+  final bool isLoading;
+  final bool isOrderSuccess;
+  final PlaceOrderResponse? orderResponse;
 
   const CartState({
     this.items = const [],
@@ -62,6 +95,9 @@ class CartState extends Equatable {
     this.appliedCoupon,
     this.errorMessage,
     this.isCouponValid = false,
+    this.isLoading = false,
+    this.isOrderSuccess = false,
+    this.orderResponse,
   });
 
   CartState copyWith({
@@ -72,6 +108,9 @@ class CartState extends Equatable {
     MockCoupon? appliedCoupon,
     String? errorMessage,
     bool? isCouponValid,
+    bool? isLoading,
+    bool? isOrderSuccess,
+    PlaceOrderResponse? orderResponse,
   }) {
     return CartState(
       items: items ?? this.items,
@@ -81,11 +120,25 @@ class CartState extends Equatable {
       appliedCoupon: appliedCoupon ?? this.appliedCoupon,
       errorMessage: errorMessage, // Reset if null
       isCouponValid: isCouponValid ?? this.isCouponValid,
+      isLoading: isLoading ?? this.isLoading,
+      isOrderSuccess: isOrderSuccess ?? this.isOrderSuccess,
+      orderResponse: orderResponse ?? this.orderResponse,
     );
   }
 
   @override
-  List<Object?> get props => [items, subtotal, discount, total, appliedCoupon, errorMessage, isCouponValid];
+  List<Object?> get props => [
+        items,
+        subtotal,
+        discount,
+        total,
+        appliedCoupon,
+        errorMessage,
+        isCouponValid,
+        isLoading,
+        isOrderSuccess,
+        orderResponse
+      ];
 }
 
 // --- BLOC ---
@@ -95,13 +148,15 @@ class CartBloc extends Bloc<CartEvent, CartState> {
     on<UpdateCartItemQuantity>(_onUpdateCartItemQuantity);
     on<RemoveFromCart>(_onRemoveFromCart);
     on<ApplyDiscountCoupon>(_onApplyDiscountCoupon);
+    on<ValidateCouponFromAPI>(_onValidateCouponFromAPI);
+    on<RemoveCoupon>(_onRemoveCoupon);
+    on<PlaceOrderEvent>(_onPlaceOrder);
     on<ClearCart>(_onClearCart);
   }
 
   void _onAddToCart(AddToCart event, Emitter<CartState> emit) {
     final updatedItems = List<MockCartItem>.from(state.items);
     
-    // Check if item with same product, size, sugar, ice, toppings already exists
     int existingIndex = -1;
     for (int i = 0; i < updatedItems.length; i++) {
       final existing = updatedItems[i];
@@ -190,11 +245,76 @@ class CartBloc extends Bloc<CartEvent, CartState> {
     }
   }
 
+  Future<void> _onValidateCouponFromAPI(
+      ValidateCouponFromAPI event, Emitter<CartState> emit) async {
+    emit(state.copyWith(isLoading: true, errorMessage: null));
+    try {
+      final result = await ApiService.instance.validateCoupon(event.code, state.subtotal);
+      if (result.valid) {
+        final fakeCoupon = MockCoupon(
+          code: result.couponCode,
+          description: result.message,
+          discountType: 'FIXED',
+          discountValue: result.discountAmount,
+          minOrder: 0,
+        );
+        _calculateTotals(state.items, fakeCoupon, emit);
+      } else {
+        emit(state.copyWith(errorMessage: result.message, isCouponValid: false, isLoading: false));
+      }
+    } catch (e) {
+      emit(state.copyWith(errorMessage: 'Lỗi kiểm tra mã giảm giá', isCouponValid: false, isLoading: false));
+    }
+  }
+
+  void _onRemoveCoupon(RemoveCoupon event, Emitter<CartState> emit) {
+    _calculateTotals(state.items, null, emit);
+  }
+
+  Future<void> _onPlaceOrder(PlaceOrderEvent event, Emitter<CartState> emit) async {
+    emit(state.copyWith(isLoading: true, errorMessage: null, isOrderSuccess: false));
+    try {
+      final orderItems = state.items.map((item) => OrderItemRequest(
+        menuItemId: int.parse(item.product.id),
+        quantity: item.quantity,
+        customizationOptionIds: item.selectedToppings.map((t) => int.parse(t.id)).toList(),
+        notes: "Size: ${item.size}, Sugar: ${item.sugarLevel}%, Ice: ${item.iceLevel}%",
+      )).toList();
+
+      final request = PlaceOrderRequest(
+        branchId: event.branchId,
+        fulfillmentMode: event.fulfillmentMode,
+        paymentMethod: event.paymentMethod,
+        couponCode: state.appliedCoupon?.code,
+        redeemPoints: event.redeemPoints > 0 ? event.redeemPoints : null,
+        items: orderItems,
+      );
+
+      final response = await ApiService.instance.placeOrder(request, event.token);
+      if (response != null) {
+        emit(state.copyWith(
+          isLoading: false,
+          isOrderSuccess: true,
+          orderResponse: response,
+          items: const [],
+          subtotal: 0,
+          discount: 0,
+          total: 0,
+          appliedCoupon: null,
+          isCouponValid: false,
+        ));
+      } else {
+        emit(state.copyWith(isLoading: false, errorMessage: 'Đặt hàng không thành công'));
+      }
+    } catch (e) {
+      emit(state.copyWith(isLoading: false, errorMessage: 'Lỗi: ${e.toString()}'));
+    }
+  }
+
   void _onClearCart(ClearCart event, Emitter<CartState> emit) {
     emit(const CartState());
   }
 
-  // --- HELPERS ---
   bool _areToppingsEqual(List<MockTopping> a, List<MockTopping> b) {
     if (a.length != b.length) return false;
     final idsA = a.map((t) => t.id).toList()..sort();
@@ -222,20 +342,20 @@ class CartBloc extends Bloc<CartEvent, CartState> {
           discount = coupon.discountValue;
         }
       } else {
-        // Invalidate coupon if subtotal fell below minOrder
         finalCoupon = null;
       }
     }
 
     double total = (subtotal - discount).clamp(0, double.infinity);
 
-    emit(CartState(
+    emit(state.copyWith(
       items: items,
       subtotal: subtotal,
       discount: discount,
       total: total,
       appliedCoupon: finalCoupon,
       isCouponValid: finalCoupon != null,
+      isLoading: false,
     ));
   }
 }

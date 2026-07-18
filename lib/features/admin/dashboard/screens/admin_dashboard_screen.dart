@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/constants/mock_data.dart';
 import '../../../../core/widgets/coffee_button.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -15,20 +16,13 @@ class AdminDashboardScreen extends StatefulWidget {
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   String _timePeriod = 'MONTH'; // TODAY, WEEK, MONTH, YEAR
   final currencyFormat = NumberFormat.currency(locale: 'vi_VN', symbol: 'đ');
+  final List<MockBranch> _branches = MockData.branches;
 
   // Consolidated statistics based on selected period
   double get _chainRevenue => _timePeriod == 'TODAY' ? 62400000 : _timePeriod == 'WEEK' ? 418000000 : _timePeriod == 'MONTH' ? 1780000000 : 21400000000;
   int get _chainOrders => _timePeriod == 'TODAY' ? 710 : _timePeriod == 'WEEK' ? 4750 : _timePeriod == 'MONTH' ? 20200 : 243000;
-  int get _activeBranches => 5;
+  int get _activeBranches => _branches.length;
   double get _chainGrowth => 8.4; // % growth
-
-  final List<Map<String, dynamic>> _branchesRanking = [
-    {'name': 'Hai Bà Trưng', 'revenue': 480000000, 'orders': 5400, 'growth': 12.5, 'isOpen': true},
-    {'name': 'Nguyễn Đình Chiểu', 'revenue': 390000000, 'orders': 4400, 'growth': 6.2, 'isOpen': true},
-    {'name': 'Lê Quý Đôn', 'revenue': 350000000, 'orders': 4000, 'growth': 8.8, 'isOpen': true},
-    {'name': 'Cách Mạng T8', 'revenue': 290000000, 'orders': 3300, 'growth': -2.4, 'isOpen': false},
-    {'name': 'Phan Xích Long', 'revenue': 270000000, 'orders': 3100, 'growth': 5.0, 'isOpen': true},
-  ];
 
   void _exportReport() {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -45,15 +39,147 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  void _showBranchDialog({MockBranch? branchToEdit}) {
+    final nameController = TextEditingController(text: branchToEdit?.name ?? '');
+    final addressController = TextEditingController(text: branchToEdit?.address ?? '');
+    final openTimeController = TextEditingController(text: branchToEdit?.openTime ?? '07:00');
+    final closeTimeController = TextEditingController(text: branchToEdit?.closeTime ?? '22:00');
+    bool isOpen = branchToEdit?.isOpen ?? true;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return AlertDialog(
+              backgroundColor: AppColors.surface,
+              title: Text(branchToEdit == null ? 'Thêm Chi Nhánh Mới' : 'Sửa Chi Nhánh', 
+                style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.accent)),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nameController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(labelText: 'Tên chi nhánh'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: addressController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(labelText: 'Địa chỉ'),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: openTimeController,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: const InputDecoration(labelText: 'Giờ mở cửa'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: closeTimeController,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: const InputDecoration(labelText: 'Giờ đóng cửa'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Trạng thái hoạt động:', style: TextStyle(color: Colors.white70)),
+                        Switch(
+                          value: isOpen,
+                          activeColor: AppColors.accent,
+                          onChanged: (val) {
+                            setModalState(() => isOpen = val);
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('HỦY', style: TextStyle(color: Colors.white60)),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    final name = nameController.text.trim();
+                    final address = addressController.text.trim();
+                    if (name.isEmpty || address.isEmpty) return;
+
+                    setState(() {
+                      if (branchToEdit == null) {
+                        _branches.add(
+                          MockBranch(
+                            id: 'br_${DateTime.now().millisecondsSinceEpoch}',
+                            name: name,
+                            address: address,
+                            latitude: 10.7825,
+                            longitude: 106.6970,
+                            openTime: openTimeController.text.trim(),
+                            closeTime: closeTimeController.text.trim(),
+                            isOpen: isOpen,
+                            distanceKm: 1.0,
+                          ),
+                        );
+                      } else {
+                        final idx = _branches.indexWhere((b) => b.id == branchToEdit.id);
+                        if (idx >= 0) {
+                          _branches[idx] = MockBranch(
+                            id: branchToEdit.id,
+                            name: name,
+                            address: address,
+                            latitude: branchToEdit.latitude,
+                            longitude: branchToEdit.longitude,
+                            openTime: openTimeController.text.trim(),
+                            closeTime: closeTimeController.text.trim(),
+                            isOpen: isOpen,
+                            distanceKm: branchToEdit.distanceKm,
+                          );
+                        }
+                      }
+                    });
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Cập nhật chi nhánh $name thành công!'), backgroundColor: AppColors.success),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent, foregroundColor: AppColors.background),
+                  child: Text(branchToEdit == null ? 'THÊM MỚI' : 'CẬP NHẬT'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Admin Central Dashboard', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        title: const Text('Admin Central Dashboard', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16)),
         backgroundColor: AppColors.background,
         elevation: 0,
         automaticallyImplyLeading: false,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.people_outline, color: AppColors.accent),
+            tooltip: 'Quản lý tài khoản',
+            onPressed: () => context.go('/admin/users'),
+          ),
           IconButton(
             icon: const Icon(Icons.restaurant_menu, color: AppColors.accent),
             tooltip: 'Cấu hình thực đơn',
@@ -75,7 +201,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('BÁO CÁO HỢP NHẤT TOÀN CHUỖI', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.accent, fontSize: 13)),
+                const Text('BÁO CÁO HỢP NHẤT TOÀN CHUỖI', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.accent, fontSize: 12)),
                 DropdownButton<String>(
                   value: _timePeriod,
                   dropdownColor: AppColors.surface,
@@ -132,9 +258,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       sideTitles: SideTitles(
                         showTitles: true,
                         getTitlesWidget: (val, meta) {
-                          const branches = ['HBT', 'NĐC', 'LQĐ', 'CMT8', 'PXL'];
-                          if (val >= 0 && val < branches.length) {
-                            return Text(branches[val.toInt()], style: const TextStyle(fontSize: 10, color: Colors.white54));
+                          const labels = ['HBT', 'NĐC', 'LQĐ', 'CMT8', 'PXL'];
+                          if (val >= 0 && val < labels.length) {
+                            return Text(labels[val.toInt()], style: const TextStyle(fontSize: 10, color: Colors.white54));
                           }
                           return const Text('');
                         },
@@ -204,11 +330,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildSectionTitle('BẢNG XẾP HẠNG CHI NHÁNH'),
-                IconButton(
-                  icon: const Icon(Icons.download, size: 18, color: AppColors.accent),
-                  onPressed: _exportReport,
-                  tooltip: 'Xuất báo cáo Excel',
+                _buildSectionTitle('DANH SÁCH & QUẢN LÝ CHI NHÁNH'),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.add_business, size: 18, color: AppColors.accent),
+                      onPressed: () => _showBranchDialog(),
+                      tooltip: 'Thêm chi nhánh mới',
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.download, size: 18, color: AppColors.accent),
+                      onPressed: _exportReport,
+                      tooltip: 'Xuất báo cáo Excel',
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -221,14 +356,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   columnSpacing: 16,
                   columns: const [
                     DataColumn(label: Text('Chi nhánh', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11))),
-                    DataColumn(label: Text('Doanh thu', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11))),
-                    DataColumn(label: Text('Đơn hàng', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11))),
-                    DataColumn(label: Text('Tăng trưởng', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11))),
+                    DataColumn(label: Text('Giờ hoạt động', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11))),
+                    DataColumn(label: Text('Trạng thái', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11))),
+                    DataColumn(label: Text('Thao tác', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11))),
                   ],
-                  rows: _branchesRanking.map((b) {
-                    final growth = b['growth'] as double;
-                    final isPositive = growth >= 0;
-
+                  rows: _branches.map((b) {
                     return DataRow(
                       cells: [
                         DataCell(
@@ -239,27 +371,42 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 height: 8,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: b['isOpen'] as bool ? AppColors.success : AppColors.error,
+                                  color: b.isOpen ? AppColors.success : AppColors.error,
                                 ),
                               ),
                               const SizedBox(width: 6),
-                              Text(b['name'] as String, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                              Text(b.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
                             ],
                           ),
                         ),
-                        DataCell(Text(currencyFormat.format(b['revenue']), style: const TextStyle(fontSize: 11))),
-                        DataCell(Text('${b['orders']}', style: const TextStyle(fontSize: 11))),
+                        DataCell(Text('${b.openTime} - ${b.closeTime}', style: const TextStyle(fontSize: 11))),
+                        DataCell(
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: (b.isOpen ? AppColors.success : AppColors.error).withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              b.isOpen ? 'ĐANG MỞ' : 'ĐÓNG CỬA',
+                              style: TextStyle(color: b.isOpen ? AppColors.success : AppColors.error, fontSize: 9, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
                         DataCell(
                           Row(
                             children: [
-                              Icon(
-                                isPositive ? Icons.arrow_upward : Icons.arrow_downward,
-                                color: isPositive ? AppColors.success : AppColors.error,
-                                size: 10,
+                              IconButton(
+                                icon: const Icon(Icons.edit, color: Colors.white60, size: 16),
+                                onPressed: () => _showBranchDialog(branchToEdit: b),
                               ),
-                              Text(
-                                '${isPositive ? "+" : ""}$growth%',
-                                style: TextStyle(color: isPositive ? AppColors.success : AppColors.error, fontSize: 11, fontWeight: FontWeight.bold),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline, color: AppColors.error, size: 16),
+                                onPressed: () {
+                                  setState(() {
+                                    _branches.removeWhere((x) => x.id == b.id);
+                                  });
+                                },
                               ),
                             ],
                           ),
@@ -299,7 +446,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(fontSize: 10, color: Colors.white70),
+              style: const TextStyle(fontSize: 11, color: Colors.white70),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -309,25 +456,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  Widget _buildMetricCard(String title, String value, Color color) {
+  Widget _buildMetricCard(String title, String value, Color accentColor) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withOpacity(0.04)),
-        ),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(fontSize: 10, color: Colors.white30)),
-            const SizedBox(height: 6),
+            Text(title, style: const TextStyle(fontSize: 11, color: Colors.white38)),
+            const SizedBox(height: 8),
             Text(
               value,
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: color),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: accentColor),
             ),
           ],
         ),

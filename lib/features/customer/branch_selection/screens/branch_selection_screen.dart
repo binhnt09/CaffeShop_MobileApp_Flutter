@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/mock_data.dart';
+import '../../../../core/network/api_service.dart';
 import '../../../../core/widgets/coffee_button.dart';
 
 class BranchSelectionScreen extends StatefulWidget {
@@ -13,14 +14,41 @@ class BranchSelectionScreen extends StatefulWidget {
 
 class _BranchSelectionScreenState extends State<BranchSelectionScreen> {
   MockBranch? _selectedBranch;
-  final List<MockBranch> _branches = MockData.branches;
+  List<MockBranch> _branches = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    // Default select first open branch if available
-    final openBranch = _branches.firstWhere((b) => b.isOpen, orElse: () => _branches.first);
-    _selectedBranch = openBranch;
+    _loadBranches();
+  }
+
+  Future<void> _loadBranches() async {
+    try {
+      final branchesList = await ApiService.instance.getBranches();
+      if (mounted) {
+        setState(() {
+          _branches = branchesList;
+          if (_branches.isNotEmpty) {
+            _selectedBranch = _branches.firstWhere((b) => b.isOpen, orElse: () => _branches.first);
+          }
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _branches = [];
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi tải chi nhánh: ${e.toString()}'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   void _confirmSelection() {
@@ -36,7 +64,8 @@ class _BranchSelectionScreenState extends State<BranchSelectionScreen> {
     }
     
     // Save selected branch context
-    // In mock, we can just save it or navigate directly
+    MockData.selectedBranch = _selectedBranch;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Đã chọn chi nhánh: ${_selectedBranch!.name}'),
@@ -54,55 +83,102 @@ class _BranchSelectionScreenState extends State<BranchSelectionScreen> {
         backgroundColor: AppColors.background,
         elevation: 0,
         automaticallyImplyLeading: false, // Force branch selection
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout, color: AppColors.error),
+            onPressed: () => context.go('/login'),
+            tooltip: 'Đăng xuất',
+          ),
+        ],
       ),
-      body: Column(
-        children: [
-          // Mock Map Area - Premium graphical design with custom canvas and markers
-          Expanded(
-            flex: 4,
-            child: Container(
-              width: double.infinity,
-              color: const Color(0xFF1E1812), // Matte black/grey background for map
-              child: Stack(
-                children: [
-                  // Map lines decoration
-                  Positioned.fill(
-                    child: CustomPaint(
-                      painter: MapGridPainter(),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
+          : _branches.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.store_outlined, size: 80, color: Colors.white24),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Không Tìm Thấy Chi Nhánh',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Hệ thống hiện chưa cấu hình chi nhánh nào trên cơ sở dữ liệu. Bạn có muốn tải dữ liệu thử nghiệm (Mock) để trải nghiệm app không?',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.white54, fontSize: 13),
+                        ),
+                        const SizedBox(height: 24),
+                        CoffeeButton(
+                          label: 'SỬ DỤNG DỮ LIỆU THỬ NGHIỆM',
+                          onTap: () {
+                            setState(() {
+                              _branches = MockData.branches;
+                              _selectedBranch = _branches.firstWhere((b) => b.isOpen, orElse: () => _branches.first);
+                            });
+                          },
+                        ),
+                      ],
                     ),
                   ),
-                  // Current user location
-                  const Positioned(
-                    top: 180,
-                    left: 160,
-                    child: UserLocationMarker(),
-                  ),
-                  // Branch markers
-                  Positioned(
-                    top: 90,
-                    left: 120,
-                    child: _buildBranchMarker(_branches[0]), // br_hbt
-                  ),
-                  Positioned(
-                    top: 140,
-                    left: 260,
-                    child: _buildBranchMarker(_branches[1]), // br_ndc
-                  ),
-                  Positioned(
-                    top: 250,
-                    left: 80,
-                    child: _buildBranchMarker(_branches[2]), // br_lqdon
-                  ),
-                  Positioned(
-                    top: 280,
-                    left: 230,
-                    child: _buildBranchMarker(_branches[3]), // br_cmt8
-                  ),
-                  Positioned(
-                    top: 70,
-                    left: 310,
-                    child: _buildBranchMarker(_branches[4]), // br_pnp
-                  ),
+                )
+              : Column(
+                  children: [
+                // Mock Map Area - Premium graphical design with custom canvas and markers
+                Expanded(
+                  flex: 4,
+                  child: Container(
+                    width: double.infinity,
+                    color: const Color(0xFF1E1812), // Matte black/grey background for map
+                    child: Stack(
+                      children: [
+                        // Map lines decoration
+                        Positioned.fill(
+                          child: CustomPaint(
+                            painter: MapGridPainter(),
+                          ),
+                        ),
+                        // Current user location
+                        const Positioned(
+                          top: 180,
+                          left: 160,
+                          child: UserLocationMarker(),
+                        ),
+                        // Branch markers
+                        if (_branches.isNotEmpty)
+                          Positioned(
+                            top: 90,
+                            left: 120,
+                            child: _buildBranchMarker(_branches[0]), // br_hbt
+                          ),
+                        if (_branches.length > 1)
+                          Positioned(
+                            top: 140,
+                            left: 260,
+                            child: _buildBranchMarker(_branches[1]), // br_ndc
+                          ),
+                        if (_branches.length > 2)
+                          Positioned(
+                            top: 250,
+                            left: 80,
+                            child: _buildBranchMarker(_branches[2]), // br_lqdon
+                          ),
+                        if (_branches.length > 3)
+                          Positioned(
+                            top: 280,
+                            left: 230,
+                            child: _buildBranchMarker(_branches[3]), // br_cmt8
+                          ),
+                        if (_branches.length > 4)
+                          Positioned(
+                            top: 70,
+                            left: 310,
+                            child: _buildBranchMarker(_branches[4]), // br_pnp
+                          ),
                   // Map Hint Instruction
                   Positioned(
                     top: 16,

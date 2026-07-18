@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../../../core/constants/mock_data.dart';
+import '../../../core/network/api_service.dart';
 
 // --- EVENTS ---
 abstract class AuthEvent extends Equatable {
@@ -134,21 +135,35 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
   Future<void> _onLoginRequested(LoginRequested event, Emitter<AuthState> emit) async {
     emit(AuthLoading());
-    await Future.delayed(const Duration(milliseconds: 1500)); // Mock delay
+    
+    // 1. Cố gắng đăng nhập qua API thật của backend
+    try {
+      final token = await ApiService.instance.login(event.email, event.password);
+      if (token != null) {
+        final realUser = await ApiService.instance.fetchUserInfo(event.email, token);
+        if (realUser != null) {
+          currentUser = realUser;
+          emit(AuthAuthenticated(realUser));
+          return;
+        }
+      }
+    } catch (e) {
+      print('Real API Login failed: $e. Falling back to local mock login...');
+    }
 
+    // 2. Fallback sang dữ liệu Mock cục bộ nếu Backend offline hoặc không có tài khoản
+    await Future.delayed(const Duration(milliseconds: 800));
     try {
       final user = MockData.users.firstWhere(
         (u) => u.email.toLowerCase() == event.email.toLowerCase(),
       );
       
-      // Simple validation for mock: passwords should just match 'password' or role name + '123'
       final expectedPassword = '${user.role.toLowerCase()}123';
-      
-      if (event.password == expectedPassword || event.password == 'password') {
+      if (event.password == expectedPassword || event.password == '123456' || event.password == 'password') {
         currentUser = user;
         emit(AuthAuthenticated(user));
       } else {
-        emit(const AuthError('Mật khẩu không chính xác. Gợi ý: dùng \'password\' hoặc \'{vai_trò}123\''));
+        emit(const AuthError('Mật khẩu không chính xác. Gợi ý: dùng \'123456\' hoặc \'{vai_trò}123\''));
       }
     } catch (e) {
       emit(const AuthError('Tài khoản không tồn tại trên hệ thống.'));

@@ -151,37 +151,40 @@ class _KDSKitchenScreenState extends State<KDSKitchenScreen> {
     final brewingOrders = _getOrdersByStatus(['BREWING']);
     final readyOrders = _getOrdersByStatus(['READY']);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('KDS - Hệ Thống Quản Lý Pha Chế Bếp', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-        backgroundColor: AppColors.background,
-        elevation: 0,
-        automaticallyImplyLeading: false,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.exit_to_app, color: AppColors.error),
-            tooltip: 'Thoát KDS',
-            onPressed: () => context.go('/login'),
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('KDS - Quản Lý Bếp', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16)),
+          backgroundColor: AppColors.background,
+          elevation: 0,
+          automaticallyImplyLeading: false,
+          bottom: TabBar(
+            tabs: [
+              Tab(text: 'Chờ (${pendingOrders.length})'),
+              Tab(text: 'Đang Làm (${brewingOrders.length})'),
+              Tab(text: 'Sẵn Sàng (${readyOrders.length})'),
+            ],
+            indicatorColor: AppColors.accent,
+            labelColor: AppColors.accent,
+            unselectedLabelColor: Colors.white60,
+            labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
           ),
-        ],
-      ),
-      body: Row(
-        children: [
-          // Column 1: PENDING / CONFIRMED
-          Expanded(
-            child: _buildKDSColumn('⏳ Chờ Pha Chế', pendingOrders, 'START'),
-          ),
-          const VerticalDivider(width: 1, color: Colors.white12),
-          // Column 2: BREWING
-          Expanded(
-            child: _buildKDSColumn('🔥 Đang Làm', brewingOrders, 'FINISH'),
-          ),
-          const VerticalDivider(width: 1, color: Colors.white12),
-          // Column 3: READY
-          Expanded(
-            child: _buildKDSColumn('✅ Đã Sẵn Sàng', readyOrders, 'DELIVER'),
-          ),
-        ],
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.exit_to_app, color: AppColors.error),
+              tooltip: 'Thoát KDS',
+              onPressed: () => context.go('/login'),
+            ),
+          ],
+        ),
+        body: TabBarView(
+          children: [
+            _buildKDSColumn('⏳ ĐƠN CHỜ PHA CHẾ', pendingOrders, 'START'),
+            _buildKDSColumn('🔥 ĐANG PHA CHẾ', brewingOrders, 'FINISH'),
+            _buildKDSColumn('✅ ĐỒ UỐNG ĐÃ SẴN SÀNG', readyOrders, 'DELIVER'),
+          ],
+        ),
       ),
     );
   }

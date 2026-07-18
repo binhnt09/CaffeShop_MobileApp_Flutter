@@ -8,6 +8,7 @@ class MockUser {
   final String role; // CUSTOMER, CASHIER, BARISTA, MANAGER, ADMIN
   final int loyaltyPoints;
   final String memberTier; // BRONZE, SILVER, GOLD, PLATINUM
+  final String? token; // JWT Token from login API
   final String? branchId; // For staff/manager
 
   MockUser({
@@ -18,6 +19,7 @@ class MockUser {
     required this.role,
     this.loyaltyPoints = 0,
     this.memberTier = 'BRONZE',
+    this.token,
     this.branchId,
   });
 }
@@ -195,6 +197,8 @@ class MockInventoryItem {
 }
 
 class MockData {
+  static MockBranch? selectedBranch;
+
   // Pre-configured users
   static final List<MockUser> users = [
     MockUser(
@@ -572,3 +576,226 @@ class MockData {
     ),
   ];
 }
+
+class CustomizationOptionDetail {
+  final String optionId;
+  final String optionName;
+  final double extraPrice;
+  final bool isAvailable;
+
+  CustomizationOptionDetail({
+    required this.optionId,
+    required this.optionName,
+    required this.extraPrice,
+    required this.isAvailable,
+  });
+
+  factory CustomizationOptionDetail.fromJson(Map<String, dynamic> json) {
+    return CustomizationOptionDetail(
+      optionId: json['optionId'].toString(),
+      optionName: json['optionName'] ?? '',
+      extraPrice: double.tryParse(json['extraPrice']?.toString() ?? '') ?? 0.0,
+      isAvailable: json['isAvailable'] ?? true,
+    );
+  }
+}
+
+class CustomizationGroupDetail {
+  final String groupId;
+  final String groupName;
+  final int minSelect;
+  final int maxSelect;
+  final List<CustomizationOptionDetail> options;
+
+  CustomizationGroupDetail({
+    required this.groupId,
+    required this.groupName,
+    required this.minSelect,
+    required this.maxSelect,
+    required this.options,
+  });
+
+  factory CustomizationGroupDetail.fromJson(Map<String, dynamic> json) {
+    return CustomizationGroupDetail(
+      groupId: json['groupId'].toString(),
+      groupName: json['groupName'] ?? '',
+      minSelect: json['minSelect'] ?? 0,
+      maxSelect: json['maxSelect'] ?? 1,
+      options: (json['options'] as List? ?? [])
+          .map((o) => CustomizationOptionDetail.fromJson(o))
+          .toList(),
+    );
+  }
+
+  bool get isSize => groupName.toLowerCase().contains('size') || groupName.toLowerCase().contains('kích cỡ');
+  bool get isSugar => groupName.toLowerCase().contains('đường') || groupName.toLowerCase().contains('sugar');
+  bool get isIce => groupName.toLowerCase().contains('đá') || groupName.toLowerCase().contains('ice');
+  bool get isTopping => !isSize && !isSugar && !isIce;
+}
+
+class MenuItemDetail {
+  final String id;
+  final String name;
+  final String description;
+  final double basePrice;
+  final String imageUrl;
+  final String status;
+  final String categoryName;
+  final List<CustomizationGroupDetail> customizationGroups;
+
+  MenuItemDetail({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.basePrice,
+    required this.imageUrl,
+    required this.status,
+    required this.categoryName,
+    required this.customizationGroups,
+  });
+
+  factory MenuItemDetail.fromJson(Map<String, dynamic> json) {
+    return MenuItemDetail(
+      id: json['id'].toString(),
+      name: json['name'] ?? '',
+      description: json['description'] ?? '',
+      basePrice: double.tryParse(json['basePrice']?.toString() ?? '') ?? 0.0,
+      imageUrl: json['imageUrl'] ?? '',
+      status: json['status'] ?? 'Available',
+      categoryName: json['categoryName'] ?? '',
+      customizationGroups: (json['customizationGroups'] as List? ?? [])
+          .map((g) => CustomizationGroupDetail.fromJson(g))
+          .toList(),
+    );
+  }
+}
+
+class PlaceOrderRequest {
+  final int branchId;
+  final String fulfillmentMode; // "DineIn" | "Takeaway"
+  final String paymentMethod;   // "Cash"
+  final String? couponCode;
+  final int? redeemPoints;
+  final List<OrderItemRequest> items;
+
+  PlaceOrderRequest({
+    required this.branchId,
+    required this.fulfillmentMode,
+    required this.paymentMethod,
+    this.couponCode,
+    this.redeemPoints,
+    required this.items,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'branchId': branchId,
+    'fulfillmentMode': fulfillmentMode,
+    'paymentMethod': paymentMethod,
+    if (couponCode != null) 'couponCode': couponCode,
+    if (redeemPoints != null) 'redeemPoints': redeemPoints,
+    'items': items.map((i) => i.toJson()).toList(),
+  };
+}
+
+class OrderItemRequest {
+  final int menuItemId;
+  final int quantity;
+  final List<int>? customizationOptionIds;
+  final String? notes;
+
+  OrderItemRequest({
+    required this.menuItemId,
+    required this.quantity,
+    this.customizationOptionIds,
+    this.notes,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'menuItemId': menuItemId,
+    'quantity': quantity,
+    if (customizationOptionIds != null) 'customizationOptionIds': customizationOptionIds,
+    if (notes != null) 'notes': notes,
+  };
+}
+
+class PlaceOrderResponse {
+  final int orderId;
+  final String orderCode;
+  final String orderStatus;
+  final double totalAmount;
+  final double discountAmount;
+  final double finalAmount;
+  final int pointsEarned;
+
+  PlaceOrderResponse({
+    required this.orderId,
+    required this.orderCode,
+    required this.orderStatus,
+    required this.totalAmount,
+    required this.discountAmount,
+    required this.finalAmount,
+    required this.pointsEarned,
+  });
+
+  factory PlaceOrderResponse.fromJson(Map<String, dynamic> json) {
+    return PlaceOrderResponse(
+      orderId: json['orderId'] ?? 0,
+      orderCode: json['orderCode'] ?? '',
+      orderStatus: json['orderStatus'] ?? 'Pending',
+      totalAmount: double.tryParse(json['totalAmount']?.toString() ?? '') ?? 0,
+      discountAmount: double.tryParse(json['discountAmount']?.toString() ?? '') ?? 0,
+      finalAmount: double.tryParse(json['finalAmount']?.toString() ?? '') ?? 0,
+      pointsEarned: json['pointsEarned'] ?? 0,
+    );
+  }
+}
+
+class CouponValidationResult {
+  final bool valid;
+  final double discountAmount;
+  final String message;
+  final String couponCode;
+
+  CouponValidationResult({
+    required this.valid,
+    required this.discountAmount,
+    required this.message,
+    required this.couponCode,
+  });
+
+  factory CouponValidationResult.fromJson(Map<String, dynamic> json) {
+    return CouponValidationResult(
+      valid: json['valid'] ?? false,
+      discountAmount: double.tryParse(json['discountAmount']?.toString() ?? '') ?? 0,
+      message: json['message'] ?? '',
+      couponCode: json['couponCode'] ?? '',
+    );
+  }
+}
+
+class LoyaltyInfo {
+  final int loyaltyPoints;
+  final String membershipTier;
+  final int pointsToNextTier;
+  final String nextTierName;
+  final double tierProgress;
+
+  LoyaltyInfo({
+    required this.loyaltyPoints,
+    required this.membershipTier,
+    required this.pointsToNextTier,
+    required this.nextTierName,
+    required this.tierProgress,
+  });
+
+  factory LoyaltyInfo.fromJson(Map<String, dynamic> json) {
+    return LoyaltyInfo(
+      loyaltyPoints: json['loyaltyPoints'] ?? 0,
+      membershipTier: json['membershipTier'] ?? 'Bronze',
+      pointsToNextTier: json['pointsToNextTier'] ?? 0,
+      nextTierName: json['nextTierName'] ?? 'Silver',
+      tierProgress: (json['tierProgress'] ?? 0.0).toDouble(),
+    );
+  }
+}
+

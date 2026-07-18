@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/mock_data.dart';
+import '../../../../core/network/api_service.dart';
 import '../../../../core/widgets/coffee_button.dart';
 import '../../cart_checkout/bloc/cart_bloc.dart';
 
@@ -23,15 +24,43 @@ class _ProductDetailSheetState extends State<ProductDetailSheet> {
   int _quantity = 1;
   final currencyFormat = NumberFormat.currency(locale: 'vi_VN', symbol: 'đ');
 
+  List<String> _sizes = ['S', 'M', 'L'];
+  bool _isLoadingOptions = true;
+
   @override
   void initState() {
     super.initState();
-    // Default size selection check
-    if (!widget.product.sizes.contains('M')) {
-      _selectedSize = widget.product.sizes.first;
+    _loadCustomizations();
+  }
+
+  Future<void> _loadCustomizations() async {
+    try {
+      final data = await ApiService.instance.getCustomizationsForProduct(widget.product.id);
+      if (mounted) {
+        setState(() {
+          _sizes = List<String>.from(data['sizes'] ?? ['S', 'M', 'L']);
+          _toppings = List<MockTopping>.from(data['toppings'] ?? []);
+          if (!_sizes.contains('M') && _sizes.isNotEmpty) {
+            _selectedSize = _sizes.first;
+          }
+          _isLoadingOptions = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _sizes = ['S', 'M', 'L'];
+          _toppings = [];
+          _isLoadingOptions = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi tải tùy chọn: ${e.toString()}'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
-    // Deep copy toppings to manage state locally
-    _toppings = widget.product.toppings.map((t) => t.copy()).toList();
   }
 
   double get _currentUnitPrice {
@@ -101,44 +130,46 @@ class _ProductDetailSheetState extends State<ProductDetailSheet> {
             
             // Scrollable Content
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                children: [
-                  // Product Banner Image
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Image.network(
-                      widget.product.imageUrl,
-                      height: 180,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Product General Info
-                  Text(
-                    widget.product.name,
-                    style: Theme.of(context).textTheme.displaySmall?.copyWith(fontSize: 22),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    widget.product.description,
-                    style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 13, height: 1.4),
-                  ),
-                  const SizedBox(height: 20),
-                  
-                  const Divider(),
-                  
-                  // Size custom option
-                  _buildSectionHeader('Chọn Size (Bắt buộc)'),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: widget.product.sizes.map((size) {
-                      String label = size;
-                      double diff = 0;
-                      if (size == 'S') diff = -5000;
-                      if (size == 'L') diff = 10000;
+              child: _isLoadingOptions
+                  ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
+                  : ListView(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      children: [
+                        // Product Banner Image
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: Image.network(
+                            widget.product.imageUrl,
+                            height: 180,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        
+                        // Product General Info
+                        Text(
+                          widget.product.name,
+                          style: Theme.of(context).textTheme.displaySmall?.copyWith(fontSize: 22),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          widget.product.description,
+                          style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 13, height: 1.4),
+                        ),
+                        const SizedBox(height: 20),
+                        
+                        const Divider(),
+                        
+                        // Size custom option
+                        _buildSectionHeader('Chọn Size (Bắt buộc)'),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: _sizes.map((size) {
+                            String label = size;
+                            double diff = 0;
+                            if (size == 'S') diff = -5000;
+                            if (size == 'L') diff = 10000;
                       
                       String diffText = diff == 0
                           ? 'Cơ bản'

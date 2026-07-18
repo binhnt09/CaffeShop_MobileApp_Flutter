@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/mock_data.dart';
 import '../../../../core/widgets/coffee_button.dart';
+import '../../../../core/network/api_service.dart';
+import '../../../auth/bloc/auth_bloc.dart';
 
 class GlobalMenuScreen extends StatefulWidget {
   const GlobalMenuScreen({super.key});
@@ -45,16 +47,17 @@ class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerPr
     return list;
   }
 
-  void _showAddCategoryDialog() {
-    final nameController = TextEditingController();
-    final iconController = TextEditingController();
+  void _showCategoryDialog({MockCategory? categoryToEdit}) {
+    final nameController = TextEditingController(text: categoryToEdit?.name ?? '');
+    final iconController = TextEditingController(text: categoryToEdit?.icon ?? '');
 
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
           backgroundColor: AppColors.surface,
-          title: const Text('Thêm Danh Mục Mới', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.accent)),
+          title: Text(categoryToEdit == null ? 'Thêm Danh Mục Mới' : 'Sửa Danh Mục', 
+            style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.accent)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -83,21 +86,32 @@ class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerPr
                 if (name.isEmpty || icon.isEmpty) return;
 
                 setState(() {
-                  _categories.add(
-                    MockCategory(
-                      id: 'cat_${DateTime.now().millisecondsSinceEpoch}',
-                      name: name,
-                      icon: icon,
-                    ),
-                  );
+                  if (categoryToEdit == null) {
+                    _categories.add(
+                      MockCategory(
+                        id: 'cat_${DateTime.now().millisecondsSinceEpoch}',
+                        name: name,
+                        icon: icon,
+                      ),
+                    );
+                  } else {
+                    final index = _categories.indexWhere((c) => c.id == categoryToEdit.id);
+                    if (index >= 0) {
+                      _categories[index] = MockCategory(
+                        id: categoryToEdit.id,
+                        name: name,
+                        icon: icon,
+                      );
+                    }
+                  }
                 });
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Đã thêm danh mục $name thành công!'), backgroundColor: AppColors.success),
+                  SnackBar(content: Text('Cập nhật danh mục $name thành công!'), backgroundColor: AppColors.success),
                 );
               },
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent, foregroundColor: AppColors.background),
-              child: const Text('THÊM MỚI'),
+              child: Text(categoryToEdit == null ? 'THÊM MỚI' : 'CẬP NHẬT'),
             ),
           ],
         );
@@ -105,15 +119,16 @@ class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerPr
     );
   }
 
-  void _showAddProductSheet() {
-    final nameController = TextEditingController();
-    final descController = TextEditingController();
-    final priceController = TextEditingController();
-    String categoryId = _categories[0].id;
+  void _showProductFormSheet({MockProduct? productToEdit}) {
+    final nameController = TextEditingController(text: productToEdit?.name ?? '');
+    final descController = TextEditingController(text: productToEdit?.description ?? '');
+    final priceController = TextEditingController(text: productToEdit != null ? productToEdit.basePrice.toStringAsFixed(0) : '');
+    final imageUrlController = TextEditingController(text: productToEdit?.imageUrl ?? '');
+    String categoryId = productToEdit?.categoryId ?? (_categories.isNotEmpty ? _categories[0].id : '1');
     
     // Size prices
-    final sPriceController = TextEditingController();
-    final lPriceController = TextEditingController();
+    final sPriceController = TextEditingController(text: '5000');
+    final lPriceController = TextEditingController(text: '10000');
 
     showModalBottomSheet(
       context: context,
@@ -138,7 +153,8 @@ class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerPr
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Thêm Sản Phẩm Mới Toàn Hệ Thống', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.accent)),
+                    Text(productToEdit == null ? 'Thêm Sản Phẩm Mới Toàn Hệ Thống' : 'Sửa Sản Phẩm Hệ Thống', 
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.accent)),
                     const SizedBox(height: 16),
                     
                     TextField(
@@ -151,6 +167,15 @@ class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerPr
                       controller: descController,
                       style: const TextStyle(color: Colors.white),
                       decoration: const InputDecoration(labelText: 'Mô tả chi tiết công thức'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: imageUrlController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        labelText: 'Đường dẫn ảnh sản phẩm (URL)',
+                        hintText: 'https://images.unsplash.com/...',
+                      ),
                     ),
                     const SizedBox(height: 12),
                     
@@ -211,39 +236,72 @@ class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerPr
                             controller: lPriceController,
                             keyboardType: TextInputType.number,
                             style: const TextStyle(color: Colors.white),
-                            decoration: const InputDecoration(labelText: 'Phụ thu Size L (vd: 10000)'),
+                            decoration: const InputDecoration(
+                              labelText: 'Phụ thu Size L (vd: 10000)',
+                            ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 24),
 
-                    CoffeeButton(
-                      label: 'HOÀN TẤT THÊM MÓN',
-                      onTap: () {
+                    const SizedBox(height: 20),CoffeeButton(
+                      label: productToEdit == null ? 'HOÀN TẤT THÊM MÓN' : 'CẬP NHẬT MÓN',
+                      onTap: () async {
                         final name = nameController.text.trim();
                         final price = double.tryParse(priceController.text) ?? 0;
                         if (name.isEmpty || price <= 0) return;
 
-                        setState(() {
-                          _products.add(
-                            MockProduct(
-                              id: 'prod_${DateTime.now().millisecondsSinceEpoch}',
-                              name: name,
-                              description: descController.text.trim(),
-                              categoryId: categoryId,
-                              basePrice: price,
-                              imageUrl: 'https://images.unsplash.com/photo-1541167760496-1628856ab772?q=80&w=300&auto=format&fit=crop',
-                              isAvailable: true,
-                              sizes: const ['S', 'M', 'L'],
-                              toppings: const [],
-                            ),
+                        final inputUrl = imageUrlController.text.trim();
+                        final finalImageUrl = inputUrl.isNotEmpty ? inputUrl : 'https://images.unsplash.com/photo-1541167760496-1628856ab772?q=80&w=300';
+
+                        final token = AuthBloc.currentUser?.token;
+                        if (productToEdit == null) {
+                          final newProd = MockProduct(
+                            id: 'prod_${DateTime.now().millisecondsSinceEpoch}',
+                            name: name,
+                            description: descController.text.trim(),
+                            categoryId: categoryId,
+                            basePrice: price,
+                            imageUrl: finalImageUrl,
+                            isAvailable: true,
+                            sizes: const ['S', 'M', 'L'],
+                            toppings: const [],
                           );
-                        });
-                        Navigator.of(context).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Đã thêm sản phẩm $name vào hệ thống!'), backgroundColor: AppColors.success),
-                        );
+                          if (token != null) {
+                            await ApiService.instance.createMenuItem(newProd, token);
+                          }
+                          setState(() {
+                            _products.add(newProd);
+                          });
+                        } else {
+                          final updatedProd = MockProduct(
+                            id: productToEdit.id,
+                            name: name,
+                            description: descController.text.trim(),
+                            categoryId: categoryId,
+                            basePrice: price,
+                            imageUrl: finalImageUrl,
+                            isAvailable: productToEdit.isAvailable,
+                            sizes: productToEdit.sizes,
+                            toppings: productToEdit.toppings,
+                          );
+                          if (token != null) {
+                            await ApiService.instance.updateMenuItem(updatedProd, token);
+                          }
+                          setState(() {
+                            final idx = _products.indexWhere((p) => p.id == productToEdit.id);
+                            if (idx >= 0) {
+                              _products[idx] = updatedProd;
+                            }
+                          });
+                        }
+                        
+                        if (mounted) {
+                          Navigator.of(context).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Đã cập nhật sản phẩm $name thành công!'), backgroundColor: AppColors.success),
+                          );
+                        }
                       },
                     ),
                   ],
@@ -262,7 +320,7 @@ class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerPr
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Cấu hình thực đơn hệ thống', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        title: const Text('Cấu hình thực đơn hệ thống', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16)),
         backgroundColor: AppColors.background,
         elevation: 0,
         leading: IconButton(
@@ -339,6 +397,8 @@ class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerPr
                                   width: 45,
                                   height: 45,
                                   fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) => 
+                                    Container(color: Colors.grey.shade900, width: 45, height: 45, child: const Icon(Icons.image_not_supported, size: 20)),
                                 ),
                               ),
                               title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
@@ -346,7 +406,18 @@ class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerPr
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Text('Đang bán:', style: TextStyle(fontSize: 10, color: Colors.white30)),
+                                  IconButton(
+                                    icon: const Icon(Icons.edit, color: Colors.white60, size: 18),
+                                    onPressed: () => _showProductFormSheet(productToEdit: product),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline, color: AppColors.error, size: 18),
+                                    onPressed: () {
+                                      setState(() {
+                                        _products.removeWhere((p) => p.id == product.id);
+                                      });
+                                    },
+                                  ),
                                   Switch(
                                     value: product.isAvailable,
                                     activeColor: AppColors.accent,
@@ -403,7 +474,7 @@ class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerPr
                       children: [
                         IconButton(
                           icon: const Icon(Icons.edit_note, color: Colors.white60),
-                          onPressed: () {},
+                          onPressed: () => _showCategoryDialog(categoryToEdit: cat),
                         ),
                         IconButton(
                           icon: const Icon(Icons.delete_outline, color: AppColors.error),
@@ -425,9 +496,9 @@ class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerPr
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           if (_tabController.index == 0) {
-            _showAddProductSheet();
+            _showProductFormSheet();
           } else {
-            _showAddCategoryDialog();
+            _showCategoryDialog();
           }
         },
         backgroundColor: AppColors.accent,

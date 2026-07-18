@@ -6,6 +6,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/mock_data.dart';
 import '../../../../core/widgets/coffee_button.dart';
 import '../../../../core/widgets/loading_overlay.dart';
+import '../../../auth/bloc/auth_bloc.dart';
 import '../bloc/cart_bloc.dart';
 
 class CheckoutScreen extends StatefulWidget {
@@ -18,82 +19,124 @@ class CheckoutScreen extends StatefulWidget {
 class _CheckoutScreenState extends State<CheckoutScreen> {
   String _paymentMethod = 'CASH'; // CASH, MOMO, VNPAY
   final _notesController = TextEditingController();
+  final _pointsController = TextEditingController(text: '0');
   bool _isProcessing = false;
   final currencyFormat = NumberFormat.currency(locale: 'vi_VN', symbol: 'đ');
 
   @override
   void dispose() {
     _notesController.dispose();
+    _pointsController.dispose();
     super.dispose();
   }
 
-  void _submitOrder(CartState cartState) async {
-    setState(() {
-      _isProcessing = true;
-    });
+  void _submitOrder(CartState cartState) {
+    final currentUser = AuthBloc.currentUser;
+    final token = currentUser?.token;
+    final branchId = int.tryParse(MockData.selectedBranch?.id ?? '1') ?? 1;
+    final redeemedPoints = int.tryParse(_pointsController.text) ?? 0;
 
-    // Simulate Payment Provider processing
-    if (_paymentMethod == 'MOMO') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đang mở ứng dụng MoMo và xử lý giao dịch...'), backgroundColor: Colors.purple),
+    if (token != null) {
+      if (_paymentMethod == 'MOMO') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đang mở ứng dụng MoMo và xử lý giao dịch...'), backgroundColor: Colors.purple),
+        );
+      } else if (_paymentMethod == 'VNPAY') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đang kết nối cổng thanh toán VNPAY...'), backgroundColor: Colors.blue),
+        );
+      }
+      context.read<CartBloc>().add(
+        PlaceOrderEvent(
+          branchId: branchId,
+          fulfillmentMode: 'Takeaway',
+          paymentMethod: _paymentMethod,
+          token: token,
+          redeemPoints: redeemedPoints,
+        ),
       );
-    } else if (_paymentMethod == 'VNPAY') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đang kết nối cổng thanh toán VNPAY...'), backgroundColor: Colors.blue),
-      );
+    } else {
+      // Local fallback for offline/development mode
+      setState(() {
+        _isProcessing = true;
+      });
+      Future.delayed(const Duration(seconds: 1), () {
+        if (!mounted) return;
+        setState(() {
+          _isProcessing = false;
+        });
+        final mockOrderCode = 'CF-${1000 + DateTime.now().second * 13}';
+        final newOrder = MockOrder(
+          id: 'ord_new_${DateTime.now().millisecondsSinceEpoch}',
+          orderCode: mockOrderCode,
+          branchName: (MockData.selectedBranch ?? MockData.branches[0]).name,
+          items: List.from(cartState.items),
+          totalAmount: cartState.subtotal,
+          discountAmount: cartState.discount + (redeemedPoints * 100.0),
+          finalAmount: (cartState.total - (redeemedPoints * 100.0)).clamp(0, double.infinity),
+          paymentMethod: _paymentMethod,
+          status: 'PENDING',
+          createdAt: DateTime.now(),
+          source: 'MOBILE_APP',
+        );
+        MockData.orderHistory.insert(0, newOrder);
+        context.read<CartBloc>().add(ClearCart());
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Đặt đơn hàng thành công! Mã đơn: $mockOrderCode'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        context.go('/track/${newOrder.id}');
+      });
     }
-
-    await Future.delayed(const Duration(seconds: 2));
-
-    if (!mounted) return;
-
-    setState(() {
-      _isProcessing = false;
-    });
-
-    final mockOrderCode = 'CF-${1000 + DateTime.now().second * 13}';
-
-    // Mock create and add order to history
-    final newOrder = MockOrder(
-      id: 'ord_new_${DateTime.now().millisecondsSinceEpoch}',
-      orderCode: mockOrderCode,
-      branchName: MockData.branches[0].name,
-      items: List.from(cartState.items),
-      totalAmount: cartState.subtotal,
-      discountAmount: cartState.discount,
-      finalAmount: cartState.total,
-      paymentMethod: _paymentMethod,
-      status: 'PENDING',
-      createdAt: DateTime.now(),
-      source: 'MOBILE_APP',
-    );
-    MockData.orderHistory.insert(0, newOrder);
-
-    // Clear cart
-    context.read<CartBloc>().add(ClearCart());
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Đặt đơn hàng thành công! Mã đơn: $mockOrderCode'),
-        backgroundColor: AppColors.success,
-      ),
-    );
-
-    // Navigate to Order Tracking with order code as ID
-    context.go('/track/${newOrder.id}');
   }
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<CartBloc, CartState>(
+    return BlocConsumer<CartBloc, CartState>(
+      listener: (context, state) {
+        if (state.isOrderSuccess && state.orderResponse != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Đặt đơn hàng thành công! Mã đơn: ${state.orderResponse!.orderCode}'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+          // Map to local mock order history just to show on screens
+          final mockOrder = MockOrder(
+            id: state.orderResponse!.orderId.toString(),
+            orderCode: state.orderResponse!.orderCode,
+            branchName: (MockData.selectedBranch ?? MockData.branches[0]).name,
+            items: const [],
+            totalAmount: state.orderResponse!.totalAmount,
+            discountAmount: state.orderResponse!.discountAmount,
+            finalAmount: state.orderResponse!.finalAmount,
+            paymentMethod: _paymentMethod,
+            status: state.orderResponse!.orderStatus,
+            createdAt: DateTime.now(),
+            source: 'MOBILE_APP',
+          );
+          MockData.orderHistory.insert(0, mockOrder);
+          context.go('/track/${state.orderResponse!.orderId}');
+        } else if (state.errorMessage != null && state.errorMessage!.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(state.errorMessage!),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+      },
       builder: (context, state) {
-        if (state.items.isEmpty && !_isProcessing) {
-          // If cart gets cleared during check, navigate back
+        final isLoading = state.isLoading || _isProcessing;
+
+        if (state.items.isEmpty && !isLoading) {
           return const Scaffold(body: Center(child: Text('Giỏ hàng trống')));
         }
 
         return LoadingOverlay(
-          isLoading: _isProcessing,
+          isLoading: isLoading,
           child: Scaffold(
             appBar: AppBar(
               title: const Text('Thanh toán', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
@@ -125,12 +168,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                MockData.branches[0].name,
+                                (MockData.selectedBranch ?? MockData.branches[0]).name,
                                 style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                MockData.branches[0].address,
+                                (MockData.selectedBranch ?? MockData.branches[0]).address,
                                 style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.5)),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -153,6 +196,69 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     decoration: InputDecoration(
                       hintText: 'VD: ít đá nhiều sữa, không topping để riêng...',
                       hintStyle: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 13),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Loyalty Points Redemption
+                  _buildSectionTitle('SỬ DỤNG ĐIỂM TÍCH LŨY'),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white.withOpacity(0.05)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Số điểm hiện có: ${AuthBloc.currentUser?.loyaltyPoints ?? 0} điểm',
+                              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 12),
+                            ),
+                            Text(
+                              'Đổi tối đa: ${currencyFormat.format((AuthBloc.currentUser?.loyaltyPoints ?? 0) * 100)}',
+                              style: const TextStyle(color: AppColors.accent, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _pointsController,
+                                keyboardType: TextInputType.number,
+                                style: const TextStyle(color: Colors.white, fontSize: 13),
+                                decoration: const InputDecoration(
+                                  hintText: 'Số điểm cần đổi (1 điểm = 100đ)...',
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                ),
+                                onChanged: (val) {
+                                  final pts = int.tryParse(val) ?? 0;
+                                  final maxPts = AuthBloc.currentUser?.loyaltyPoints ?? 0;
+                                  if (pts > maxPts) {
+                                    _pointsController.text = maxPts.toString();
+                                    _pointsController.selection = TextSelection.fromPosition(
+                                      TextPosition(offset: _pointsController.text.length),
+                                    );
+                                  }
+                                  setState(() {});
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              '- ${currencyFormat.format((int.tryParse(_pointsController.text) ?? 0) * 100)}',
+                              style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -240,6 +346,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             ],
                           ),
                         ],
+                        if ((int.tryParse(_pointsController.text) ?? 0) > 0) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Đổi điểm tích lũy', style: TextStyle(color: Colors.white54, fontSize: 13)),
+                              Text('-${currencyFormat.format((int.tryParse(_pointsController.text) ?? 0) * 100.0)}', style: const TextStyle(color: AppColors.error, fontSize: 13)),
+                            ],
+                          ),
+                        ],
                         const SizedBox(height: 8),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -249,7 +365,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                             ),
                             Text(
-                              currencyFormat.format(state.total),
+                              currencyFormat.format((state.total - ((int.tryParse(_pointsController.text) ?? 0) * 100.0)).clamp(0.0, double.infinity)),
                               style: const TextStyle(color: AppColors.accent, fontWeight: FontWeight.bold, fontSize: 17),
                             ),
                           ],

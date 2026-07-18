@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/constants/mock_data.dart';
+import '../../../core/network/api_service.dart';
 import '../product_detail/screens/product_detail_sheet.dart';
 import '../cart_checkout/bloc/cart_bloc.dart';
 
@@ -15,26 +16,60 @@ class MenuScreen extends StatefulWidget {
 }
 
 class _MenuScreenState extends State<MenuScreen> with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+  TabController? _tabController;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = "";
   final currencyFormat = NumberFormat.currency(locale: 'vi_VN', symbol: 'đ');
 
+  List<MockCategory> _categories = [];
+  List<MockProduct> _products = [];
+  bool _isLoading = true;
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: MockData.categories.length + 1, vsync: this);
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final cats = await ApiService.instance.getCategories();
+      final prods = await ApiService.instance.getProducts();
+      if (mounted) {
+        setState(() {
+          _categories = cats;
+          _products = prods;
+          _tabController = TabController(length: _categories.length + 1, vsync: this);
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _categories = [];
+          _products = [];
+          _tabController = TabController(length: 1, vsync: this);
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi tải thực đơn: ${e.toString()}'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _tabController?.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
   List<MockProduct> _getFilteredProducts(String? categoryId) {
-    List<MockProduct> list = MockData.products;
+    List<MockProduct> list = _products;
     
     // Filter by Category
     if (categoryId != null) {
@@ -134,65 +169,122 @@ class _MenuScreenState extends State<MenuScreen> with SingleTickerProviderStateM
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Search Bar
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (val) {
-                setState(() {
-                  _searchQuery = val;
-                });
-              },
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'Tìm kiếm trà, cà phê, bánh ngọt...',
-                prefixIcon: const Icon(Icons.search, color: Colors.white24),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, color: Colors.white24),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {
-                            _searchQuery = "";
-                          });
-                        },
-                      )
-                    : null,
-                contentPadding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-            ),
-          ),
-
-          // Horizontal Category Tabs
-          TabBar(
-            controller: _tabController,
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-            unselectedLabelStyle: const TextStyle(fontSize: 13),
-            tabs: [
-              const Tab(text: 'Tất cả'),
-              ...MockData.categories.map((cat) => Tab(text: '${cat.icon} ${cat.name}')),
-            ],
-          ),
-
-          const SizedBox(height: 8),
-
-          // Menu Grid Views
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
+          : _products.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.local_cafe_outlined, size: 80, color: Colors.white24),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Không Có Sản Phẩm Nào',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Thực đơn chi nhánh này trống hoặc chưa cấu hình trên máy chủ. Bạn có muốn tải thực đơn mẫu không?',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.white54, fontSize: 13),
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.accent,
+                            foregroundColor: AppColors.background,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _categories = MockData.categories;
+                              _products = MockData.products;
+                              _tabController = TabController(length: _categories.length + 1, vsync: this);
+                            });
+                          },
+                          child: const Text('SỬ DỤNG THỰC ĐƠN THỬ NGHIỆM', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : Column(
               children: [
-                _buildProductGrid(null), // All products
-                ...MockData.categories.map((cat) => _buildProductGrid(cat.id)),
+                // Search Bar
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (val) {
+                      setState(() {
+                        _searchQuery = val;
+                      });
+                    },
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'Tìm kiếm trà, cà phê, bánh ngọt...',
+                      prefixIcon: const Icon(Icons.search, color: Colors.white24),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, color: Colors.white24),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {
+                                  _searchQuery = "";
+                                });
+                              },
+                            )
+                          : null,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+
+                // Horizontal Category Tabs
+                TabBar(
+                  controller: _tabController,
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  unselectedLabelStyle: const TextStyle(fontSize: 13),
+                  tabs: [
+                    const Tab(text: 'Tất cả'),
+                    ..._categories.map((cat) {
+                      IconData iconData = Icons.local_cafe;
+                      if (cat.icon == 'emoji_food_beverage') iconData = Icons.emoji_food_beverage;
+                      if (cat.icon == 'cake') iconData = Icons.cake;
+                      if (cat.icon == 'ac_unit') iconData = Icons.ac_unit;
+                      return Tab(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(iconData, size: 16),
+                            const SizedBox(width: 6),
+                            Text(cat.name),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+
+                const SizedBox(height: 8),
+
+                // Menu Grid Views
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildProductGrid(null), // All products
+                      ..._categories.map((cat) => _buildProductGrid(cat.id)),
+                    ],
+                  ),
+                ),
               ],
             ),
-          ),
-        ],
-      ),
       // Cart Floating Action Button
       floatingActionButton: BlocBuilder<CartBloc, CartState>(
         builder: (context, state) {
