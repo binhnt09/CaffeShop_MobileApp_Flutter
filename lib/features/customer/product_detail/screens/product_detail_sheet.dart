@@ -17,14 +17,16 @@ class ProductDetailSheet extends StatefulWidget {
 }
 
 class _ProductDetailSheetState extends State<ProductDetailSheet> {
-  String _selectedSize = 'M';
-  int _selectedSugar = 100;
-  int _selectedIce = 100;
+  Map<String, dynamic>? _selectedSizeOption;
+  Map<String, dynamic>? _selectedSugarOption;
+  Map<String, dynamic>? _selectedIceOption;
   List<MockTopping> _toppings = [];
   int _quantity = 1;
   final currencyFormat = NumberFormat.currency(locale: 'vi_VN', symbol: 'đ');
 
-  List<String> _sizes = ['S', 'M', 'L'];
+  List<Map<String, dynamic>> _sizes = [];
+  List<Map<String, dynamic>> _sugarLevels = [];
+  List<Map<String, dynamic>> _iceLevels = [];
   bool _isLoadingOptions = true;
 
   @override
@@ -38,10 +40,28 @@ class _ProductDetailSheetState extends State<ProductDetailSheet> {
       final data = await ApiService.instance.getCustomizationsForProduct(widget.product.id);
       if (mounted) {
         setState(() {
-          _sizes = List<String>.from(data['sizes'] ?? ['S', 'M', 'L']);
+          _sizes = List<Map<String, dynamic>>.from(data['sizes'] ?? []);
+          _sugarLevels = List<Map<String, dynamic>>.from(data['sugarLevels'] ?? []);
+          _iceLevels = List<Map<String, dynamic>>.from(data['iceLevels'] ?? []);
           _toppings = List<MockTopping>.from(data['toppings'] ?? []);
-          if (!_sizes.contains('M') && _sizes.isNotEmpty) {
-            _selectedSize = _sizes.first;
+
+          if (_sizes.isNotEmpty) {
+            _selectedSizeOption = _sizes.firstWhere(
+              (s) => s['name'].toString().toUpperCase().contains('M'),
+              orElse: () => _sizes.first,
+            );
+          }
+          if (_sugarLevels.isNotEmpty) {
+            _selectedSugarOption = _sugarLevels.firstWhere(
+              (s) => s['name'].toString().contains('100'),
+              orElse: () => _sugarLevels.first,
+            );
+          }
+          if (_iceLevels.isNotEmpty) {
+            _selectedIceOption = _iceLevels.firstWhere(
+              (s) => s['name'].toString().contains('100') || s['name'].toString().contains('Bình thường'),
+              orElse: () => _iceLevels.first,
+            );
           }
           _isLoadingOptions = false;
         });
@@ -49,7 +69,9 @@ class _ProductDetailSheetState extends State<ProductDetailSheet> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _sizes = ['S', 'M', 'L'];
+          _sizes = [{'id': 2, 'name': 'Size M', 'extraPrice': 0.0}];
+          _sugarLevels = [{'id': 4, 'name': '100% Đường', 'extraPrice': 0.0}];
+          _iceLevels = [{'id': 8, 'name': '100% Đá', 'extraPrice': 0.0}];
           _toppings = [];
           _isLoadingOptions = false;
         });
@@ -65,8 +87,15 @@ class _ProductDetailSheetState extends State<ProductDetailSheet> {
 
   double get _currentUnitPrice {
     double price = widget.product.basePrice;
-    if (_selectedSize == 'S') price -= 5000;
-    if (_selectedSize == 'L') price += 10000;
+    if (_selectedSizeOption != null) {
+      price += _selectedSizeOption!['extraPrice'] as double;
+    }
+    if (_selectedSugarOption != null) {
+      price += _selectedSugarOption!['extraPrice'] as double;
+    }
+    if (_selectedIceOption != null) {
+      price += _selectedIceOption!['extraPrice'] as double;
+    }
     for (var topping in _toppings) {
       if (topping.isSelected) {
         price += topping.price;
@@ -79,14 +108,30 @@ class _ProductDetailSheetState extends State<ProductDetailSheet> {
 
   void _addToCart() {
     final selectedTops = _toppings.where((t) => t.isSelected).toList();
+    
+    final List<int> customizationOptionIds = [];
+    if (_selectedSizeOption != null) customizationOptionIds.add(_selectedSizeOption!['id'] as int);
+    if (_selectedSugarOption != null) customizationOptionIds.add(_selectedSugarOption!['id'] as int);
+    if (_selectedIceOption != null) customizationOptionIds.add(_selectedIceOption!['id'] as int);
+    customizationOptionIds.addAll(selectedTops.map((t) => int.parse(t.id)));
+
+    String sizeLabel = _selectedSizeOption != null ? _selectedSizeOption!['name'].toString().replaceAll('Size ', '') : 'M';
+    int sugarPercent = _selectedSugarOption != null
+        ? (int.tryParse(_selectedSugarOption!['name'].toString().replaceAll('% Đường', '').replaceAll(' Đường', '')) ?? 100)
+        : 100;
+    int icePercent = _selectedIceOption != null
+        ? (_selectedIceOption!['name'].toString().contains('Không') ? 0 : _selectedIceOption!['name'].toString().contains('Ít') ? 50 : 100)
+        : 100;
+
     final cartItem = MockCartItem(
       id: const Uuid().v4(),
       product: widget.product,
-      size: _selectedSize,
-      sugarLevel: _selectedSugar,
-      iceLevel: _selectedIce,
+      size: sizeLabel,
+      sugarLevel: sugarPercent,
+      iceLevel: icePercent,
       selectedToppings: selectedTops,
       quantity: _quantity,
+      customizationOptionIds: customizationOptionIds,
     );
 
     context.read<CartBloc>().add(AddToCart(cartItem));
@@ -94,7 +139,7 @@ class _ProductDetailSheetState extends State<ProductDetailSheet> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Đã thêm ${widget.product.name} (${_selectedSize}) vào giỏ hàng!'),
+        content: Text('Đã thêm ${widget.product.name} ($sizeLabel) vào giỏ hàng!'),
         backgroundColor: AppColors.success,
         duration: const Duration(seconds: 2),
       ),
@@ -162,101 +207,114 @@ class _ProductDetailSheetState extends State<ProductDetailSheet> {
                         const Divider(),
                         
                         // Size custom option
-                        _buildSectionHeader('Chọn Size (Bắt buộc)'),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: _sizes.map((size) {
-                            String label = size;
-                            double diff = 0;
-                            if (size == 'S') diff = -5000;
-                            if (size == 'L') diff = 10000;
-                      
-                      String diffText = diff == 0
-                          ? 'Cơ bản'
-                          : diff > 0
-                              ? '+${currencyFormat.format(diff)}'
-                              : '${currencyFormat.format(diff)}';
-                              
-                      final isSelected = _selectedSize == size;
-                      return Expanded(
-                        child: GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _selectedSize = size;
-                            });
-                          },
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(
-                              color: isSelected ? AppColors.primary : AppColors.surfaceVariant,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: isSelected ? AppColors.accent : Colors.white12,
-                                width: 1.5,
-                              ),
-                            ),
-                            child: Column(
-                              children: [
-                                Text(
-                                  'Size $label',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: isSelected ? Colors.white : Colors.white70,
-                                    fontSize: 14,
+                        if (_sizes.isNotEmpty) ...[
+                          _buildSectionHeader('Chọn Size (Bắt buộc)'),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: _sizes.map((sizeOpt) {
+                              String label = sizeOpt['name'].toString().replaceAll('Size ', '');
+                              double diff = sizeOpt['extraPrice'] as double;
+                        
+                              String diffText = diff == 0
+                                  ? 'Cơ bản'
+                                  : diff > 0
+                                      ? '+${currencyFormat.format(diff)}'
+                                      : '${currencyFormat.format(diff)}';
+                                  
+                              final isSelected = _selectedSizeOption?['id'] == sizeOpt['id'];
+                              return Expanded(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedSizeOption = sizeOpt;
+                                    });
+                                  },
+                                  child: Container(
+                                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    decoration: BoxDecoration(
+                                      color: isSelected ? AppColors.primary : AppColors.surfaceVariant,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: isSelected ? AppColors.accent : Colors.white12,
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Text(
+                                          'Size $label',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: isSelected ? Colors.white : Colors.white70,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          diffText,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: isSelected ? AppColors.accent : Colors.white38,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  diffText,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: isSelected ? AppColors.accent : Colors.white38,
-                                  ),
-                                ),
-                              ],
-                            ),
+                              );
+                            }).toList(),
                           ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 20),
-                  
-                  // Sugar Level custom option
-                  _buildSectionHeader('Chọn mức Đường'),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [0, 30, 50, 70, 100].map((sugar) {
-                      final isSelected = _selectedSugar == sugar;
-                      return ChoiceChip(
-                        label: Text('$sugar%'),
-                        selected: isSelected,
-                        onSelected: (selected) {
-                          if (selected) {
-                            setState(() {
-                              _selectedSugar = sugar;
-                            });
-                          }
-                        },
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 20),
-                  
-                  // Ice Level custom option
-                  _buildSectionHeader('Chọn mức Đá'),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildIceChip('Không đá', 0),
-                      _buildIceChip('Ít đá (50%)', 50),
-                      _buildIceChip('Bình thường', 100),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
+                          const SizedBox(height: 20),
+                        ],
+                        
+                        // Sugar Level custom option
+                        if (_sugarLevels.isNotEmpty) ...[
+                          _buildSectionHeader('Chọn mức Đường'),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: _sugarLevels.map((sugarOpt) {
+                              final isSelected = _selectedSugarOption?['id'] == sugarOpt['id'];
+                              return ChoiceChip(
+                                label: Text(sugarOpt['name'].toString().replaceAll(' Đường', '')),
+                                selected: isSelected,
+                                onSelected: (selected) {
+                                  if (selected) {
+                                    setState(() {
+                                      _selectedSugarOption = sugarOpt;
+                                    });
+                                  }
+                                },
+                              );
+                            }).toList(),
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+                        
+                        // Ice Level custom option
+                        if (_iceLevels.isNotEmpty) ...[
+                          _buildSectionHeader('Chọn mức Đá'),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: _iceLevels.map((iceOpt) {
+                              final isSelected = _selectedIceOption?['id'] == iceOpt['id'];
+                              return ChoiceChip(
+                                label: Text(iceOpt['name'].toString().replaceAll(' Đá', '')),
+                                selected: isSelected,
+                                onSelected: (selected) {
+                                  if (selected) {
+                                    setState(() {
+                                      _selectedIceOption = iceOpt;
+                                    });
+                                  }
+                                },
+                              );
+                            }).toList(),
+                          ),
+                          const SizedBox(height: 20),
+                        ],
                   
                   // Toppings custom list option
                   if (_toppings.isNotEmpty) ...[
@@ -382,20 +440,7 @@ class _ProductDetailSheetState extends State<ProductDetailSheet> {
     );
   }
 
-  Widget _buildIceChip(String label, int value) {
-    final isSelected = _selectedIce == value;
-    return ChoiceChip(
-      label: Text(label),
-      selected: isSelected,
-      onSelected: (selected) {
-        if (selected) {
-          setState(() {
-            _selectedIce = value;
-          });
-        }
-      },
-    );
-  }
+
 
   Widget _buildQuantityButton(IconData icon, VoidCallback onPressed) {
     return Container(

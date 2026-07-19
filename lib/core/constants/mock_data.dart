@@ -110,6 +110,7 @@ class MockCartItem {
   int iceLevel; // 0, 50, 100 (Không đá, Ít đá, Bình thường)
   List<MockTopping> selectedToppings;
   int quantity;
+  List<int>? customizationOptionIds;
 
   MockCartItem({
     required this.id,
@@ -119,6 +120,7 @@ class MockCartItem {
     this.iceLevel = 100,
     required this.selectedToppings,
     this.quantity = 1,
+    this.customizationOptionIds,
   });
 
   double get unitPrice {

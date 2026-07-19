@@ -99,29 +99,37 @@ class ApiService {
     final resGroups = await _get('/api/customization-groups/menu-item/$intId');
     if (resGroups['success'] == true && resGroups['data'] is List) {
       final List groupsData = resGroups['data'];
-      List<String> sizes = [];
+      List<Map<String, dynamic>> sizes = [];
+      List<Map<String, dynamic>> sugarLevels = [];
+      List<Map<String, dynamic>> iceLevels = [];
       List<MockTopping> toppings = [];
 
       for (var group in groupsData) {
         final int groupId = group['id'];
         final String groupName = group['groupName'] ?? '';
-        final bool isSize = groupName.toLowerCase().contains('size');
+        final bool isSize = groupName.toLowerCase().contains('size') || groupName.toLowerCase().contains('kích cỡ');
+        final bool isSugar = groupName.toLowerCase().contains('đường') || groupName.toLowerCase().contains('sugar');
+        final bool isIce = groupName.toLowerCase().contains('đá') || groupName.toLowerCase().contains('ice');
 
-        // 2. Fetch options for this group
         final resOptions = await _get('/api/customization-options?groupId.equals=$groupId');
         if (resOptions['success'] == true && resOptions['data'] is List) {
           final List optionsData = resOptions['data'];
           for (var option in optionsData) {
+            final int optionId = option['id'];
             final String optionName = option['optionName'] ?? '';
             final double extraPrice = option['extraPrice'] != null 
                 ? double.parse(option['extraPrice'].toString()) 
                 : 0.0;
 
             if (isSize) {
-              sizes.add(optionName);
+              sizes.add({'id': optionId, 'name': optionName, 'extraPrice': extraPrice});
+            } else if (isSugar) {
+              sugarLevels.add({'id': optionId, 'name': optionName, 'extraPrice': extraPrice});
+            } else if (isIce) {
+              iceLevels.add({'id': optionId, 'name': optionName, 'extraPrice': extraPrice});
             } else {
               toppings.add(MockTopping(
-                id: option['id'].toString(),
+                id: optionId.toString(),
                 name: optionName,
                 price: extraPrice,
                 isSelected: false,
@@ -132,7 +140,9 @@ class ApiService {
       }
 
       return {
-        'sizes': sizes.isNotEmpty ? sizes : ['S', 'M', 'L'],
+        'sizes': sizes,
+        'sugarLevels': sugarLevels,
+        'iceLevels': iceLevels,
         'toppings': toppings,
       };
     }
@@ -370,6 +380,206 @@ class ApiService {
       return res != null;
     } catch (e) {
       print('updateMenuItem error: $e');
+    }
+    return false;
+  }
+
+  // --- Category CRUD ---
+  Future<bool> createCategory(MockCategory category, String token) async {
+    try {
+      final res = await _postAuth('/api/categories', {
+        'name': category.name,
+        'description': '',
+        'imageUrl': '',
+      }, token);
+      return res != null;
+    } catch (e) {
+      print('createCategory error: $e');
+    }
+    return false;
+  }
+
+  Future<bool> updateCategory(MockCategory category, String token) async {
+    try {
+      final res = await _putAuth('/api/categories/${category.id}', {
+        'id': int.tryParse(category.id),
+        'name': category.name,
+        'description': '',
+        'imageUrl': '',
+      }, token);
+      return res != null;
+    } catch (e) {
+      print('updateCategory error: $e');
+    }
+    return false;
+  }
+
+  Future<bool> deleteCategory(String id, String token) async {
+    try {
+      final uri = Uri.parse('${ApiConstants.baseUrl}/api/categories/$id');
+      final response = await http.delete(uri, headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      }).timeout(const Duration(seconds: 10));
+      return response.statusCode == 200 || response.statusCode == 204;
+    } catch (e) {
+      print('deleteCategory error: $e');
+    }
+    return false;
+  }
+
+  Future<bool> deleteMenuItem(String id, String token) async {
+    try {
+      final uri = Uri.parse('${ApiConstants.baseUrl}/api/menu-items/$id');
+      final response = await http.delete(uri, headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      }).timeout(const Duration(seconds: 10));
+      return response.statusCode == 200 || response.statusCode == 204;
+    } catch (e) {
+      print('deleteMenuItem error: $e');
+    }
+    return false;
+  }
+
+  // --- Inventory APIs ---
+  Future<List<MockInventoryItem>> getBranchInventory(String branchId, String token) async {
+    try {
+      final res = await _getAuth('/api/branch-inventories?branchId.equals=$branchId', token);
+      if (res['success'] == true && res['data'] is List) {
+        final List data = res['data'];
+        return data.map((item) {
+          return MockInventoryItem(
+            id: item['ingredientId'].toString(),
+            name: item['ingredientName'] ?? 'Nguyên liệu',
+            unit: 'kg', 
+            currentStock: double.tryParse(item['quantityAvailable']?.toString() ?? '') ?? 0.0,
+            lowStockThreshold: 10.0, 
+          );
+        }).toList();
+      }
+    } catch (e) {
+      print('getBranchInventory error: $e');
+    }
+    return MockData.inventoryItems;
+  }
+
+  Future<bool> updateBranchInventory(int branchId, int ingredientId, double quantityAvailable, String token) async {
+    try {
+      final res = await _postAuth('/api/branch-inventories', {
+        'branchId': branchId,
+        'ingredientId': ingredientId,
+        'quantityAvailable': quantityAvailable,
+        'lastUpdated': DateTime.now().toUtc().toIso8601String(),
+      }, token);
+      return res != null;
+    } catch (e) {
+      print('updateBranchInventory error: $e');
+    }
+    return false;
+  }
+
+  // --- Reports ---
+  Future<Map<String, dynamic>?> getBranchReport(String branchId, String period, String token) async {
+    try {
+      final res = await _getAuth('/api/reports/branch/$branchId?period=$period', token);
+      if (res['success'] == true) return res['data'];
+    } catch (e) {
+      print('getBranchReport error: $e');
+    }
+    return null;
+  }
+
+  // --- Branch CRUD ---
+  Future<bool> createBranch(MockBranch branch, String token) async {
+    try {
+      final res = await _postAuth('/api/branches', {
+        'branchName': branch.name,
+        'address': branch.address,
+        'latitude': branch.latitude,
+        'longitude': branch.longitude,
+        'status': branch.isOpen ? 'Open' : 'Closed',
+      }, token);
+      return res != null;
+    } catch (e) {
+      print('createBranch error: $e');
+    }
+    return false;
+  }
+
+  Future<bool> updateBranch(MockBranch branch, String token) async {
+    try {
+      final res = await _putAuth('/api/branches/${branch.id}', {
+        'id': int.tryParse(branch.id),
+        'branchName': branch.name,
+        'address': branch.address,
+        'latitude': branch.latitude,
+        'longitude': branch.longitude,
+        'status': branch.isOpen ? 'Open' : 'Closed',
+      }, token);
+      return res != null;
+    } catch (e) {
+      print('updateBranch error: $e');
+    }
+    return false;
+  }
+
+  Future<bool> deleteBranch(String id, String token) async {
+    try {
+      final uri = Uri.parse('${ApiConstants.baseUrl}/api/branches/$id');
+      final response = await http.delete(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 5));
+      return response.statusCode == 200 || response.statusCode == 204;
+    } catch (e) {
+      print('deleteBranch error: $e');
+    }
+    return false;
+  }
+
+  // --- Ingredients & Recipes ---
+  Future<List<Map<String, dynamic>>> getIngredients(String token) async {
+    try {
+      final res = await _getAuth('/api/ingredients', token);
+      if (res['success'] == true && res['data'] is List) {
+        return List<Map<String, dynamic>>.from(
+          (res['data'] as List).map((x) => Map<String, dynamic>.from(x)),
+        );
+      }
+    } catch (e) {
+      print('getIngredients error: $e');
+    }
+    return [];
+  }
+
+  Future<List<Map<String, dynamic>>> getRecipes(String token) async {
+    try {
+      final res = await _getAuth('/api/recipes', token);
+      if (res['success'] == true && res['data'] is List) {
+        return List<Map<String, dynamic>>.from(
+          (res['data'] as List).map((x) => Map<String, dynamic>.from(x)),
+        );
+      }
+    } catch (e) {
+      print('getRecipes error: $e');
+    }
+    return [];
+  }
+
+  Future<bool> updateRecipe(int menuItemId, int ingredientId, double quantityRequired, String token) async {
+    try {
+      final res = await _postAuth('/api/recipes', {
+        'menuItemId': menuItemId,
+        'ingredientId': ingredientId,
+        'quantityRequired': quantityRequired,
+      }, token);
+      return res != null;
+    } catch (e) {
+      print('updateRecipe error: $e');
     }
     return false;
   }

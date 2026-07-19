@@ -6,6 +6,8 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/mock_data.dart';
 import '../../../../core/widgets/coffee_button.dart';
 import '../../../../core/widgets/status_badge.dart';
+import '../../../auth/bloc/auth_bloc.dart';
+import '../../../../core/network/api_service.dart';
 
 class OrderTrackingScreen extends StatefulWidget {
   final String orderId;
@@ -25,7 +27,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
   void initState() {
     super.initState();
     _loadOrder();
-    _startMockAutoProgress();
+    _startStatusPolling();
   }
 
   @override
@@ -45,6 +47,32 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
         _currentStatus = _order!.status;
       }
     }
+  }
+
+  void _startStatusPolling() {
+    final token = AuthBloc.currentUser?.token;
+    if (token == null) {
+      _startMockAutoProgress();
+      return;
+    }
+
+    _statusTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+      try {
+        final status = await ApiService.instance.getOrderStatus(widget.orderId, token);
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+        if (status != _currentStatus) {
+          _updateStatus(status);
+        }
+        if (status == 'COMPLETED' || status == 'CANCELLED') {
+          timer.cancel();
+        }
+      } catch (e) {
+        print('Error polling order status: $e');
+      }
+    });
   }
 
   void _startMockAutoProgress() {

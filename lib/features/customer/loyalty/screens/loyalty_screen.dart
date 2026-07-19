@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/mock_data.dart';
 import '../../../../core/widgets/coffee_button.dart';
+import '../../../auth/bloc/auth_bloc.dart';
+import '../../../../core/network/api_service.dart';
 
 class LoyaltyScreen extends StatefulWidget {
   const LoyaltyScreen({super.key});
@@ -12,8 +14,12 @@ class LoyaltyScreen extends StatefulWidget {
 }
 
 class _LoyaltyScreenState extends State<LoyaltyScreen> {
-  int _userPoints = MockData.users[0].loyaltyPoints;
-  final String _userTier = MockData.users[0].memberTier;
+  int _userPoints = 0;
+  String _userTier = 'BRONZE';
+  String _nextTierName = 'Silver';
+  int _pointsToNextTier = 500;
+  double _tierProgress = 0.0;
+  bool _isLoading = true;
 
   final List<Map<String, dynamic>> _vouchers = [
     {'name': 'Miễn Phí 1 Topping Trân Châu', 'points': 40, 'desc': 'Áp dụng cho mọi ly nước size M/L'},
@@ -22,19 +28,88 @@ class _LoyaltyScreenState extends State<LoyaltyScreen> {
     {'name': 'Ly Sứ CaffeShop Phiên Bản Giới Hạn', 'points': 300, 'desc': 'Nhận trực tiếp tại quầy cửa hàng'},
   ];
 
-  void _redeemVoucher(Map<String, dynamic> voucher) {
+  @override
+  void initState() {
+    super.initState();
+    _loadLoyaltyData();
+  }
+
+  Future<void> _loadLoyaltyData() async {
+    final token = AuthBloc.currentUser?.token;
+    if (token == null) {
+      // Local mock fallback if no login
+      setState(() {
+        _userPoints = MockData.users[0].loyaltyPoints;
+        _userTier = MockData.users[0].memberTier;
+        _nextTierName = 'Silver';
+        _pointsToNextTier = 500 - _userPoints;
+        _tierProgress = _userPoints / 500.0;
+        _isLoading = false;
+      });
+      return;
+    }
+
+    try {
+      final loyalty = await ApiService.instance.getMyLoyalty(token);
+      if (loyalty != null && mounted) {
+        setState(() {
+          _userPoints = loyalty.loyaltyPoints;
+          _userTier = loyalty.membershipTier;
+          _nextTierName = loyalty.nextTierName ?? 'Silver';
+          _pointsToNextTier = loyalty.pointsToNextTier ?? 0;
+          _tierProgress = loyalty.tierProgress ?? 0.0;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi tải thông tin tích điểm: $e'), backgroundColor: AppColors.error),
+        );
+      }
+    }
+  }
+
+  Future<void> _redeemVoucher(Map<String, dynamic> voucher) async {
     final pointsCost = voucher['points'] as int;
     if (_userPoints >= pointsCost) {
-      setState(() {
-        _userPoints -= pointsCost;
+      final token = AuthBloc.currentUser?.token;
+      if (token != null) {
+        setState(() => _isLoading = true);
+        final res = await ApiService.instance.redeemPoints(pointsCost, token);
+        if (res != null) {
+          await _loadLoyaltyData();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(res['message'] ?? 'Đổi quà thành công!'),
+                backgroundColor: AppColors.success,
+              ),
+            );
+          }
+        } else {
+          setState(() => _isLoading = false);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Đổi quà thất bại, vui lòng thử lại sau.'), backgroundColor: AppColors.error),
+            );
+          }
+        }
+      } else {
         // Mock updates locally
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Đổi quà thành công! Đã đổi: ${voucher['name']}. Vui lòng kiểm tra ví Voucher.'),
-          backgroundColor: AppColors.success,
-        ),
-      );
+        setState(() {
+          _userPoints -= pointsCost;
+          _pointsToNextTier = 500 - _userPoints;
+          _tierProgress = _userPoints / 500.0;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Đổi quà thành công! Đã đổi: ${voucher['name']}. Vui lòng kiểm tra ví Voucher.'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -77,11 +152,13 @@ class _LoyaltyScreenState extends State<LoyaltyScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
             // Membership loyalty Card
             Container(
               width: double.infinity,
@@ -129,18 +206,21 @@ class _LoyaltyScreenState extends State<LoyaltyScreen> {
                   const SizedBox(height: 16),
                   
                   // Progress bar to next tier
-                  const Row(
+                  Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Hạng Vàng', style: TextStyle(color: Colors.white70, fontSize: 11)),
-                      Text('320 / 500đ để lên Bạch Kim', style: TextStyle(color: Colors.white70, fontSize: 11)),
+                      Text('Hiện tại: ${_userTier.toUpperCase()}', style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                      Text(_pointsToNextTier > 0 
+                          ? 'Cần $_pointsToNextTier điểm để lên $_nextTierName'
+                          : 'Đã đạt hạng cao nhất', 
+                        style: const TextStyle(color: Colors.white70, fontSize: 11)),
                     ],
                   ),
                   const SizedBox(height: 6),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
-                      value: _userPoints / 500,
+                      value: _tierProgress,
                       backgroundColor: Colors.white24,
                       valueColor: const AlwaysStoppedAnimation<Color>(AppColors.accent),
                       minHeight: 6,

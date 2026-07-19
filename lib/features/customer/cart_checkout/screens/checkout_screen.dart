@@ -30,65 +30,127 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     super.dispose();
   }
 
+  void _showMockPaymentGateway(String method, VoidCallback onSuccess) {
+    showModalBottomSheet(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(24),
+          height: 300,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: method == 'MOMO'
+                    ? Image.network(
+                        'https://upload.wikimedia.org/wikipedia/vi/f/fe/MoMo_Logo.png',
+                        height: 50,
+                      )
+                    : const Text(
+                        'VNPay',
+                        style: TextStyle(
+                          color: Colors.blue,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+              ),
+              const SizedBox(height: 24),
+              const CircularProgressIndicator(color: AppColors.accent),
+              const SizedBox(height: 24),
+              Text(
+                'Đang kết nối cổng thanh toán $method...',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Vui lòng không đóng ứng dụng hoặc chuyển hướng màn hình',
+                style: TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        Navigator.pop(context); // Close bottom sheet
+        onSuccess();
+      }
+    });
+  }
+
   void _submitOrder(CartState cartState) {
     final currentUser = AuthBloc.currentUser;
     final token = currentUser?.token;
     final branchId = int.tryParse(MockData.selectedBranch?.id ?? '1') ?? 1;
     final redeemedPoints = int.tryParse(_pointsController.text) ?? 0;
 
-    if (token != null) {
-      if (_paymentMethod == 'MOMO') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Đang mở ứng dụng MoMo và xử lý giao dịch...'), backgroundColor: Colors.purple),
-        );
-      } else if (_paymentMethod == 'VNPAY') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Đang kết nối cổng thanh toán VNPAY...'), backgroundColor: Colors.blue),
-        );
-      }
-      context.read<CartBloc>().add(
-        PlaceOrderEvent(
-          branchId: branchId,
-          fulfillmentMode: 'Takeaway',
-          paymentMethod: _paymentMethod,
-          token: token,
-          redeemPoints: redeemedPoints,
-        ),
-      );
-    } else {
-      // Local fallback for offline/development mode
-      setState(() {
-        _isProcessing = true;
-      });
-      Future.delayed(const Duration(seconds: 1), () {
-        if (!mounted) return;
-        setState(() {
-          _isProcessing = false;
-        });
-        final mockOrderCode = 'CF-${1000 + DateTime.now().second * 13}';
-        final newOrder = MockOrder(
-          id: 'ord_new_${DateTime.now().millisecondsSinceEpoch}',
-          orderCode: mockOrderCode,
-          branchName: (MockData.selectedBranch ?? MockData.branches[0]).name,
-          items: List.from(cartState.items),
-          totalAmount: cartState.subtotal,
-          discountAmount: cartState.discount + (redeemedPoints * 100.0),
-          finalAmount: (cartState.total - (redeemedPoints * 100.0)).clamp(0, double.infinity),
-          paymentMethod: _paymentMethod,
-          status: 'PENDING',
-          createdAt: DateTime.now(),
-          source: 'MOBILE_APP',
-        );
-        MockData.orderHistory.insert(0, newOrder);
-        context.read<CartBloc>().add(ClearCart());
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Đặt đơn hàng thành công! Mã đơn: $mockOrderCode'),
-            backgroundColor: AppColors.success,
+    void executePlaceOrder() {
+      if (token != null) {
+        context.read<CartBloc>().add(
+          PlaceOrderEvent(
+            branchId: branchId,
+            fulfillmentMode: 'Takeaway',
+            paymentMethod: _paymentMethod,
+            token: token,
+            redeemPoints: redeemedPoints,
           ),
         );
-        context.go('/track/${newOrder.id}');
-      });
+      } else {
+        // Local fallback for offline/development mode
+        setState(() {
+          _isProcessing = true;
+        });
+        Future.delayed(const Duration(seconds: 1), () {
+          if (!mounted) return;
+          setState(() {
+            _isProcessing = false;
+          });
+          final mockOrderCode = 'CF-${1000 + DateTime.now().second * 13}';
+          final newOrder = MockOrder(
+            id: 'ord_new_${DateTime.now().millisecondsSinceEpoch}',
+            orderCode: mockOrderCode,
+            branchName: (MockData.selectedBranch ?? MockData.branches[0]).name,
+            items: List.from(cartState.items),
+            totalAmount: cartState.subtotal,
+            discountAmount: cartState.discount + (redeemedPoints * 100.0),
+            finalAmount: (cartState.total - (redeemedPoints * 100.0)).clamp(0, double.infinity),
+            paymentMethod: _paymentMethod,
+            status: 'PENDING',
+            createdAt: DateTime.now(),
+            source: 'MOBILE_APP',
+          );
+          MockData.orderHistory.insert(0, newOrder);
+          context.read<CartBloc>().add(ClearCart());
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Đặt đơn hàng thành công! Mã đơn: $mockOrderCode'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+          context.go('/track/${newOrder.id}');
+        });
+      }
+    }
+
+    if (_paymentMethod == 'MOMO' || _paymentMethod == 'VNPAY') {
+      _showMockPaymentGateway(_paymentMethod, executePlaceOrder);
+    } else {
+      executePlaceOrder();
     }
   }
 

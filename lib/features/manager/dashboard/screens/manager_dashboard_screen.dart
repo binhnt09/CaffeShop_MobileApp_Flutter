@@ -4,6 +4,9 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/mock_data.dart';
+import '../../../auth/bloc/auth_bloc.dart';
+import '../../../../core/network/api_service.dart';
+
 
 class ManagerDashboardScreen extends StatefulWidget {
   const ManagerDashboardScreen({super.key});
@@ -16,19 +19,68 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
   String _timeFilter = 'WEEK'; // TODAY, WEEK, MONTH
   final currencyFormat = NumberFormat.currency(locale: 'vi_VN', symbol: 'đ');
 
-  // Dynamic KPI values based on filter selection
-  double get _revenue => _timeFilter == 'TODAY' ? 12500000 : _timeFilter == 'WEEK' ? 84000000 : 362000000;
-  int get _ordersCount => _timeFilter == 'TODAY' ? 143 : _timeFilter == 'WEEK' ? 950 : 4100;
-  double get _avgOrder => _revenue / _ordersCount;
-  String get _topProduct => 'Bạc Xỉu Đá Caramel';
+  double _revenue = 0.0;
+  int _ordersCount = 0;
+  double _avgOrder = 0.0;
+  String _topProduct = 'N/A';
+  List<Map<String, dynamic>> _topProducts = [];
+  bool _isLoading = true;
 
-  final List<Map<String, dynamic>> _topProducts = [
-    {'name': 'Bạc Xỉu Đá Caramel', 'sold': 324, 'percent': 0.85},
-    {'name': 'Cà Phê Sữa Đá Sài Gòn', 'sold': 288, 'percent': 0.76},
-    {'name': 'Trà Đào Cam Sả', 'sold': 210, 'percent': 0.55},
-    {'name': 'Trà Sen Vàng Hạt Sen', 'sold': 185, 'percent': 0.48},
-    {'name': 'Tiramisu Cacao', 'sold': 95, 'percent': 0.25},
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadReport();
+  }
+
+  Future<void> _loadReport() async {
+    final token = AuthBloc.currentUser?.token;
+    final branchId = AuthBloc.currentUser?.branchId ?? '1';
+
+    if (token == null) {
+      setState(() {
+        _revenue = _timeFilter == 'TODAY' ? 12500000 : _timeFilter == 'WEEK' ? 84000000 : 362000000;
+        _ordersCount = _timeFilter == 'TODAY' ? 143 : _timeFilter == 'WEEK' ? 950 : 4100;
+        _avgOrder = _revenue / _ordersCount;
+        _topProduct = 'Bạc Xỉu Đá Caramel';
+        _topProducts = [
+          {'name': 'Bạc Xỉu Đá Caramel', 'sold': 324, 'percent': 0.85},
+          {'name': 'Cà Phê Sữa Đá Sài Gòn', 'sold': 288, 'percent': 0.76},
+          {'name': 'Trà Đào Cam Sả', 'sold': 210, 'percent': 0.55},
+          {'name': 'Trà Sen Vàng Hạt Sen', 'sold': 185, 'percent': 0.48},
+          {'name': 'Tiramisu Cacao', 'sold': 95, 'percent': 0.25},
+        ];
+        _isLoading = false;
+      });
+      return;
+    }
+
+    try {
+      final report = await ApiService.instance.getBranchReport(branchId, _timeFilter, token);
+      if (report != null && mounted) {
+        setState(() {
+          _revenue = double.tryParse(report['revenue']?.toString() ?? '') ?? 0.0;
+          _ordersCount = int.tryParse(report['ordersCount']?.toString() ?? '') ?? 0;
+          _avgOrder = double.tryParse(report['avgOrder']?.toString() ?? '') ?? 0.0;
+          _topProduct = report['topProduct'] ?? 'N/A';
+          if (report['topProducts'] is List) {
+            _topProducts = List<Map<String, dynamic>>.from(
+              (report['topProducts'] as List).map((x) => Map<String, dynamic>.from(x)),
+            );
+          } else {
+            _topProducts = [];
+          }
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi tải báo cáo doanh thu: $e'), backgroundColor: AppColors.error),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,9 +103,11 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Header store metadata
@@ -78,7 +132,11 @@ class _ManagerDashboardScreenState extends State<ManagerDashboardScreen> {
                   style: const TextStyle(color: AppColors.accent, fontWeight: FontWeight.bold),
                   onChanged: (val) {
                     if (val != null) {
-                      setState(() => _timeFilter = val);
+                      setState(() {
+                        _timeFilter = val;
+                        _isLoading = true;
+                      });
+                      _loadReport();
                     }
                   },
                   items: const [

@@ -16,8 +16,9 @@ class GlobalMenuScreen extends StatefulWidget {
 
 class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final List<MockProduct> _products = MockData.products;
-  final List<MockCategory> _categories = MockData.categories;
+  List<MockProduct> _products = [];
+  List<MockCategory> _categories = [];
+  bool _isLoading = true;
   final currencyFormat = NumberFormat.currency(locale: 'vi_VN', symbol: 'đ');
 
   // Search & Filter
@@ -28,6 +29,32 @@ class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerPr
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final cats = await ApiService.instance.getCategories();
+      final prods = await ApiService.instance.getProducts();
+      if (mounted) {
+        setState(() {
+          _categories = cats;
+          _products = prods;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _categories = [];
+          _products = [];
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi tải dữ liệu thực đơn: $e'), backgroundColor: AppColors.error),
+        );
+      }
+    }
   }
 
   @override
@@ -80,35 +107,58 @@ class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerPr
               child: const Text('HỦY', style: TextStyle(color: Colors.white60)),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 final name = nameController.text.trim();
                 final icon = iconController.text.trim();
                 if (name.isEmpty || icon.isEmpty) return;
 
-                setState(() {
+                final token = AuthBloc.currentUser?.token;
+                if (token != null) {
+                  setState(() => _isLoading = true);
+                  final cat = MockCategory(
+                    id: categoryToEdit?.id ?? '0',
+                    name: name,
+                    icon: icon,
+                  );
+                  bool success = false;
                   if (categoryToEdit == null) {
-                    _categories.add(
-                      MockCategory(
-                        id: 'cat_${DateTime.now().millisecondsSinceEpoch}',
-                        name: name,
-                        icon: icon,
-                      ),
-                    );
+                    success = await ApiService.instance.createCategory(cat, token);
                   } else {
-                    final index = _categories.indexWhere((c) => c.id == categoryToEdit.id);
-                    if (index >= 0) {
-                      _categories[index] = MockCategory(
-                        id: categoryToEdit.id,
-                        name: name,
-                        icon: icon,
-                      );
-                    }
+                    success = await ApiService.instance.updateCategory(cat, token);
                   }
-                });
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Cập nhật danh mục $name thành công!'), backgroundColor: AppColors.success),
-                );
+                  if (success) {
+                    await _loadData();
+                  } else {
+                    setState(() => _isLoading = false);
+                  }
+                } else {
+                  setState(() {
+                    if (categoryToEdit == null) {
+                      _categories.add(
+                        MockCategory(
+                          id: 'cat_${DateTime.now().millisecondsSinceEpoch}',
+                          name: name,
+                          icon: icon,
+                        ),
+                      );
+                    } else {
+                      final index = _categories.indexWhere((c) => c.id == categoryToEdit.id);
+                      if (index >= 0) {
+                        _categories[index] = MockCategory(
+                          id: categoryToEdit.id,
+                          name: name,
+                          icon: icon,
+                        );
+                      }
+                    }
+                  });
+                }
+                if (mounted) {
+                  Navigator.of(context).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Cập nhật danh mục $name thành công!'), backgroundColor: AppColors.success),
+                  );
+                }
               },
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent, foregroundColor: AppColors.background),
               child: Text(categoryToEdit == null ? 'THÊM MỚI' : 'CẬP NHẬT'),
@@ -255,6 +305,7 @@ class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerPr
                         final finalImageUrl = inputUrl.isNotEmpty ? inputUrl : 'https://images.unsplash.com/photo-1541167760496-1628856ab772?q=80&w=300';
 
                         final token = AuthBloc.currentUser?.token;
+                        setState(() => _isLoading = true);
                         if (productToEdit == null) {
                           final newProd = MockProduct(
                             id: 'prod_${DateTime.now().millisecondsSinceEpoch}',
@@ -269,10 +320,13 @@ class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerPr
                           );
                           if (token != null) {
                             await ApiService.instance.createMenuItem(newProd, token);
+                            await _loadData();
+                          } else {
+                            setState(() {
+                              _products.add(newProd);
+                              _isLoading = false;
+                            });
                           }
-                          setState(() {
-                            _products.add(newProd);
-                          });
                         } else {
                           final updatedProd = MockProduct(
                             id: productToEdit.id,
@@ -287,13 +341,16 @@ class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerPr
                           );
                           if (token != null) {
                             await ApiService.instance.updateMenuItem(updatedProd, token);
+                            await _loadData();
+                          } else {
+                            setState(() {
+                              final idx = _products.indexWhere((p) => p.id == productToEdit.id);
+                              if (idx >= 0) {
+                                _products[idx] = updatedProd;
+                              }
+                              _isLoading = false;
+                            });
                           }
-                          setState(() {
-                            final idx = _products.indexWhere((p) => p.id == productToEdit.id);
-                            if (idx >= 0) {
-                              _products[idx] = updatedProd;
-                            }
-                          });
                         }
                         
                         if (mounted) {
@@ -335,7 +392,9 @@ class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerPr
           ],
         ),
       ),
-      body: TabBarView(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
+          : TabBarView(
         controller: _tabController,
         children: [
           // Tab Products

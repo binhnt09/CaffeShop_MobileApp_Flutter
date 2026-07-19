@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/mock_data.dart';
 import '../../../../core/network/api_service.dart';
@@ -23,14 +25,86 @@ class _BranchSelectionScreenState extends State<BranchSelectionScreen> {
     _loadBranches();
   }
 
+  Future<Position?> _determinePosition() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return null;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return null;
+      }
+
+      if (permission == LocationPermission.deniedForever) return null;
+
+      return await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.low,
+        timeLimit: const Duration(seconds: 3),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _loadBranches() async {
     try {
+      final position = await _determinePosition();
       final branchesList = await ApiService.instance.getBranches();
+      
+      List<MockBranch> processedBranches = [];
+      for (var branch in branchesList) {
+        double distanceKm = 0.0;
+        if (position != null) {
+          final meters = Geolocator.distanceBetween(
+            position.latitude,
+            position.longitude,
+            branch.latitude,
+            branch.longitude,
+          );
+          distanceKm = double.parse((meters / 1000).toStringAsFixed(1));
+        } else {
+          // Fallback to distance from standard HCMC center (10.776, 106.698)
+          final meters = Geolocator.distanceBetween(
+            10.776,
+            106.698,
+            branch.latitude,
+            branch.longitude,
+          );
+          distanceKm = double.parse((meters / 1000).toStringAsFixed(1));
+        }
+        processedBranches.add(MockBranch(
+          id: branch.id,
+          name: branch.name,
+          address: branch.address,
+          latitude: branch.latitude,
+          longitude: branch.longitude,
+          openTime: branch.openTime,
+          closeTime: branch.closeTime,
+          isOpen: branch.isOpen,
+          distanceKm: distanceKm,
+        ));
+      }
+
+      // Sort by distance
+      processedBranches.sort((a, b) => a.distanceKm.compareTo(b.distanceKm));
+
+      // Try load previous selection
+      final prefs = await SharedPreferences.getInstance();
+      final savedBranchId = prefs.getString('selected_branch_id');
+
       if (mounted) {
         setState(() {
-          _branches = branchesList;
+          _branches = processedBranches;
           if (_branches.isNotEmpty) {
-            _selectedBranch = _branches.firstWhere((b) => b.isOpen, orElse: () => _branches.first);
+            if (savedBranchId != null) {
+              _selectedBranch = _branches.firstWhere(
+                (b) => b.id == savedBranchId,
+                orElse: () => _branches.firstWhere((b) => b.isOpen, orElse: () => _branches.first),
+              );
+            } else {
+              _selectedBranch = _branches.firstWhere((b) => b.isOpen, orElse: () => _branches.first);
+            }
           }
           _isLoading = false;
         });
@@ -51,7 +125,7 @@ class _BranchSelectionScreenState extends State<BranchSelectionScreen> {
     }
   }
 
-  void _confirmSelection() {
+  Future<void> _confirmSelection() async {
     if (_selectedBranch == null) return;
     if (!_selectedBranch!.isOpen) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -66,13 +140,22 @@ class _BranchSelectionScreenState extends State<BranchSelectionScreen> {
     // Save selected branch context
     MockData.selectedBranch = _selectedBranch;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Đã chọn chi nhánh: ${_selectedBranch!.name}'),
-        backgroundColor: AppColors.success,
-      ),
-    );
-    context.go('/menu');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('selected_branch_id', _selectedBranch!.id);
+    } catch (e) {
+      print('Error saving branch selection: $e');
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Đã chọn chi nhánh: ${_selectedBranch!.name}'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      context.go('/menu');
+    }
   }
 
   @override

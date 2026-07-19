@@ -186,6 +186,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             onPressed: () => context.go('/admin/menu'),
           ),
           IconButton(
+            icon: const Icon(Icons.receipt_long, color: AppColors.accent),
+            tooltip: 'Định lượng công thức',
+            onPressed: () => context.go('/admin/recipes'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.storefront, color: AppColors.accent),
+            tooltip: 'Mạng lưới chi nhánh',
+            onPressed: () => context.go('/admin/branches'),
+          ),
+          IconButton(
             icon: const Icon(Icons.exit_to_app, color: AppColors.error),
             tooltip: 'Đăng xuất',
             onPressed: () => context.go('/login'),

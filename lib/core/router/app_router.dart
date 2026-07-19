@@ -21,6 +21,8 @@ import '../../features/manager/dashboard/screens/manager_dashboard_screen.dart';
 import '../../features/admin/menu_management/screens/global_menu_screen.dart';
 import '../../features/admin/dashboard/screens/admin_dashboard_screen.dart';
 import '../../features/admin/user_management/screens/user_management_screen.dart';
+import '../../features/admin/branch_management/screens/branch_management_screen.dart';
+import '../../features/admin/recipe_management/screens/recipe_management_screen.dart';
 
 class AppRouter {
   static final GoRouter router = GoRouter(
@@ -115,6 +117,14 @@ class AppRouter {
       GoRoute(
         path: '/admin/users',
         builder: (context, state) => const UserManagementScreen(),
+      ),
+      GoRoute(
+        path: '/admin/branches',
+        builder: (context, state) => const BranchManagementScreen(),
+      ),
+      GoRoute(
+        path: '/admin/recipes',
+        builder: (context, state) => const RecipeManagementScreen(),
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

@@ -274,12 +274,20 @@ class CartBloc extends Bloc<CartEvent, CartState> {
   Future<void> _onPlaceOrder(PlaceOrderEvent event, Emitter<CartState> emit) async {
     emit(state.copyWith(isLoading: true, errorMessage: null, isOrderSuccess: false));
     try {
-      final orderItems = state.items.map((item) => OrderItemRequest(
-        menuItemId: int.parse(item.product.id),
-        quantity: item.quantity,
-        customizationOptionIds: item.selectedToppings.map((t) => int.parse(t.id)).toList(),
-        notes: "Size: ${item.size}, Sugar: ${item.sugarLevel}%, Ice: ${item.iceLevel}%",
-      )).toList();
+      final orderItems = state.items.map((item) {
+        final List<int> optionIds = [];
+        if (item.customizationOptionIds != null) {
+          optionIds.addAll(item.customizationOptionIds!);
+        } else {
+          optionIds.addAll(item.selectedToppings.map((t) => int.tryParse(t.id) ?? 0).where((id) => id > 0));
+        }
+        return OrderItemRequest(
+          menuItemId: int.parse(item.product.id),
+          quantity: item.quantity,
+          customizationOptionIds: optionIds,
+          notes: "Size: ${item.size}, Sugar: ${item.sugarLevel}%, Ice: ${item.iceLevel}%",
+        );
+      }).toList();
 
       final request = PlaceOrderRequest(
         branchId: event.branchId,

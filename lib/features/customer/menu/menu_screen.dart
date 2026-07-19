@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/constants/mock_data.dart';
 import '../../../core/network/api_service.dart';
@@ -34,7 +35,27 @@ class _MenuScreenState extends State<MenuScreen> with SingleTickerProviderStateM
   Future<void> _loadData() async {
     try {
       final cats = await ApiService.instance.getCategories();
-      final prods = await ApiService.instance.getProducts();
+      
+      String? branchId = MockData.selectedBranch?.id;
+      if (branchId == null) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          branchId = prefs.getString('selected_branch_id');
+          if (branchId != null) {
+            // Restore selection in MockData if it was persisted
+            final branches = await ApiService.instance.getBranches();
+            final matched = branches.where((b) => b.id == branchId);
+            if (matched.isNotEmpty) {
+              MockData.selectedBranch = matched.first;
+            }
+          }
+        } catch (_) {}
+      }
+
+      final List<MockProduct> prods = branchId != null
+          ? await ApiService.instance.getProductsByBranch(branchId)
+          : await ApiService.instance.getProducts();
+
       if (mounted) {
         setState(() {
           _categories = cats;

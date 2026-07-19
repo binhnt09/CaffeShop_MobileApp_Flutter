@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/mock_data.dart';
 import '../../../../core/widgets/coffee_button.dart';
+import '../../../auth/bloc/auth_bloc.dart';
+import '../../../../core/network/api_service.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -12,9 +14,49 @@ class InventoryScreen extends StatefulWidget {
 }
 
 class _InventoryScreenState extends State<InventoryScreen> {
-  final List<MockInventoryItem> _inventory = MockData.inventoryItems;
+  List<MockInventoryItem> _inventory = [];
+  bool _isLoading = true;
   String _searchQuery = "";
   String _filterStatus = 'ALL'; // ALL, LOW, OK
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInventory();
+  }
+
+  Future<void> _loadInventory() async {
+    final token = AuthBloc.currentUser?.token;
+    final branchId = AuthBloc.currentUser?.branchId ?? '1';
+
+    if (token == null) {
+      setState(() {
+        _inventory = MockData.inventoryItems;
+        _isLoading = false;
+      });
+      return;
+    }
+
+    try {
+      final list = await ApiService.instance.getBranchInventory(branchId, token);
+      if (mounted) {
+        setState(() {
+          _inventory = list;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _inventory = [];
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi tải dữ liệu kho: $e'), backgroundColor: AppColors.error),
+        );
+      }
+    }
+  }
 
   List<MockInventoryItem> _getFilteredInventory() {
     List<MockInventoryItem> list = _inventory;
@@ -35,6 +77,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   void _showAddStockSheet() {
+    if (_inventory.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Kho hiện tại chưa có nguyên liệu nào!'), backgroundColor: AppColors.error),
+      );
+      return;
+    }
     MockInventoryItem? selectedItem = _inventory.first;
     final quantityController = TextEditingController();
 
@@ -115,7 +163,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   // Action
                   CoffeeButton(
                     label: 'HOÀN THÀNH NHẬP KHO',
-                    onTap: () {
+                    onTap: () async {
                       final amount = double.tryParse(quantityController.text) ?? 0;
                       if (amount <= 0) {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -124,20 +172,36 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         return;
                       }
 
-                      setState(() {
-                        if (selectedItem != null) {
-                          selectedItem!.currentStock += amount;
+                      if (selectedItem != null) {
+                        final token = AuthBloc.currentUser?.token;
+                        final branchId = int.tryParse(AuthBloc.currentUser?.branchId ?? '1') ?? 1;
+                        final ingredientId = int.tryParse(selectedItem!.id) ?? 1;
+                        final newTotal = selectedItem!.currentStock + amount;
+
+                        if (token != null) {
+                          setState(() => _isLoading = true);
+                          final success = await ApiService.instance.updateBranchInventory(branchId, ingredientId, newTotal, token);
+                          if (success) {
+                            await _loadInventory();
+                          } else {
+                            setState(() => _isLoading = false);
+                          }
+                        } else {
+                          setState(() {
+                            selectedItem!.currentStock = newTotal;
+                          });
                         }
-                      });
+                      }
 
-                      Navigator.of(context).pop();
-
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Nhập kho thành công! Đã thêm $amount ${selectedItem?.unit} vào ${selectedItem?.name}.'),
-                          backgroundColor: AppColors.success,
-                        ),
-                      );
+                      if (mounted) {
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Nhập kho thành công! Đã thêm $amount ${selectedItem?.unit} vào ${selectedItem?.name}.'),
+                            backgroundColor: AppColors.success,
+                          ),
+                        );
+                      }
                     },
                   ),
                 ],
@@ -164,8 +228,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
           onPressed: () => context.go('/manager/dashboard'),
         ),
       ),
-      body: Column(
-        children: [
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
+          : Column(
+              children: [
           // Urgency Low Stock Warning banner
           if (lowStockCount > 0)
             Container(
