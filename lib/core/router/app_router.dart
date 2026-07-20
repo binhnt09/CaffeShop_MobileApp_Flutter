@@ -56,6 +56,10 @@ class AppRouter {
         builder: (context, state) => const MenuScreen(),
       ),
       GoRoute(
+        path: '/home',
+        builder: (context, state) => const MenuScreen(),
+      ),
+      GoRoute(
         path: '/cart',
         builder: (context, state) => const CartScreen(),
       ),
@@ -82,6 +86,10 @@ class AppRouter {
       // Staff POS routes
       GoRoute(
         path: '/pos',
+        builder: (context, state) => const POSCounterScreen(),
+      ),
+      GoRoute(
+        path: '/pos/counter',
         builder: (context, state) => const POSCounterScreen(),
       ),
       GoRoute(

@@ -198,49 +198,65 @@ class ProfileScreen extends StatelessWidget {
                 itemCount: history.length,
                 itemBuilder: (context, index) {
                   final order = history[index];
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceVariant,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Đơn: ${order.orderCode}',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              order.createdAt.toString().substring(0, 16),
-                              style: const TextStyle(fontSize: 10, color: Colors.white30),
-                            ),
-                          ],
-                        ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              '${order.finalAmount.toInt()}đ',
-                              style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.accent, fontSize: 13),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              order.status == 'COMPLETED' ? 'Hoàn thành' : 'Đang chờ',
-                              style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.bold,
-                                color: order.status == 'COMPLETED' ? AppColors.success : AppColors.warning,
+                  return InkWell(
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      context.push('/track/${order.id}');
+                    },
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceVariant,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white.withOpacity(0.05)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Đơn: ${order.orderCode}',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.accent),
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
+                              const SizedBox(height: 2),
+                              Text(
+                                '${order.items.length} món  •  ${order.createdAt.toString().substring(0, 16)}',
+                                style: const TextStyle(fontSize: 10, color: Colors.white54),
+                              ),
+                            ],
+                          ),
+                          Row(
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    '${order.finalAmount.toInt()}đ',
+                                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    order.status == 'COMPLETED' ? 'Hoàn thành' : (order.status == 'CANCELLED' ? 'Đã hủy' : 'Đang tiến hành'),
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.bold,
+                                      color: order.status == 'COMPLETED'
+                                          ? AppColors.success
+                                          : (order.status == 'CANCELLED' ? AppColors.error : AppColors.warning),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(width: 8),
+                              const Icon(Icons.chevron_right, size: 18, color: Colors.white38),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 },

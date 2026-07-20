@@ -156,7 +156,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
             if (context.canPop()) {
               context.pop();
             } else {
-              context.go('/home');
+              context.go('/menu');
             }
           },
         ),
@@ -172,11 +172,13 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.replay, color: AppColors.accent),
-            tooltip: 'Tua về: Reset đơn hàng về Đang Chờ',
-            onPressed: _rewindOrderToPending,
-          ),
+          // Nút tua về chỉ hiện khi đơn đã COMPLETED hoặc CANCELLED để test lại luồng
+          if (_currentStatus.toUpperCase() == 'COMPLETED' || _currentStatus.toUpperCase() == 'CANCELLED')
+            IconButton(
+              icon: const Icon(Icons.replay, color: AppColors.accent),
+              tooltip: 'Tua về: Reset đơn hàng về Đang Chờ',
+              onPressed: _rewindOrderToPending,
+            ),
         ],
         backgroundColor: AppColors.background,
         elevation: 0,
@@ -200,7 +202,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                   const LivePulseDot(),
                   const SizedBox(width: 8),
                   Text(
-                    'Đang kết nối live updates (Mock WS)',
+                    'Đang theo dõi trạng thái đơn theo thời gian thực',
                     style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 11, fontWeight: FontWeight.bold),
                   ),
                 ],
@@ -250,7 +252,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Order details preview card
+            // Order details card - full product info
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -265,40 +267,130 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text(
-                        'Chi tiết sản phẩm đã đặt:',
-                        style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.accent),
+                        'Chi tiết đơn hàng',
+                        style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.accent, fontSize: 14),
                       ),
                       StatusBadge(status: _currentStatus),
                     ],
                   ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${_order!.orderCode}  •  ${_order!.branchName}',
+                    style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.4)),
+                  ),
                   const SizedBox(height: 12),
-                  ..._order!.items.map((item) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6.0),
-                      child: Row(
+                  const Divider(height: 1, color: Colors.white10),
+                  const SizedBox(height: 12),
+                  // Items list with details
+                  if (_order!.items.isEmpty)
+                    Center(
+                      child: Text(
+                        'Đang tải chi tiết sản phẩm...',
+                        style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 12),
+                      ),
+                    )
+                  else
+                    ..._order!.items.map((item) {
+                      final List<String> extras = [
+                        if (item.size.isNotEmpty) 'Size ${item.size}',
+                        if (item.sugarLevel > 0) 'Đường ${item.sugarLevel}%',
+                        if (item.iceLevel > 0) 'Đá ${item.iceLevel}%',
+                        ...item.selectedToppings.map((t) => t.name),
+                      ];
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceVariant,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Quantity badge
+                            Container(
+                              width: 28,
+                              height: 28,
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  'x${item.quantity}',
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item.product.name,
+                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                                  ),
+                                  if (extras.isNotEmpty) ...
+                                    [
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        extras.join(' · '),
+                                        style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.5)),
+                                      ),
+                                    ],
+                                ],
+                              ),
+                            ),
+                            Text(
+                              currencyFormat.format(item.totalPrice),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.accent),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  const SizedBox(height: 4),
+                  const Divider(height: 1, color: Colors.white10),
+                  const SizedBox(height: 10),
+                  // Price summary
+                  if (_order!.discountAmount > 0) ...
+                    [
+                      Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            '${item.product.name} (x${item.quantity})',
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                          Text(
-                            currencyFormat.format(item.totalPrice),
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                          ),
+                          Text('Tạm tính', style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5))),
+                          Text(currencyFormat.format(_order!.totalAmount), style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5))),
                         ],
                       ),
-                    );
-                  }),
-                  const Divider(),
-                  const SizedBox(height: 6),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Giảm giá', style: TextStyle(fontSize: 12, color: AppColors.success.withOpacity(0.8))),
+                          Text('- ${currencyFormat.format(_order!.discountAmount)}', style: TextStyle(fontSize: 12, color: AppColors.success.withOpacity(0.8))),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                    ],
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Tổng thanh toán', style: TextStyle(fontSize: 13, color: Colors.white60)),
+                      const Text('Tổng thanh toán', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                       Text(
                         currencyFormat.format(_order!.finalAmount),
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.accent),
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.accent),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Thanh toán bằng', style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.4))),
+                      Text(
+                        _order!.paymentMethod,
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.accent),
                       ),
                     ],
                   ),

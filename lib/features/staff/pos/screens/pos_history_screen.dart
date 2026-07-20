@@ -138,7 +138,7 @@ class _POSHistoryScreenState extends State<POSHistoryScreen> {
             if (context.canPop()) {
               context.pop();
             } else {
-              context.go('/pos/counter');
+              context.go('/pos');
             }
           },
         ),
@@ -286,6 +286,11 @@ class _POSHistoryScreenState extends State<POSHistoryScreen> {
                                 // Void or reprint actions
                                 Row(
                                   children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.visibility, size: 20, color: AppColors.accent),
+                                      onPressed: () => context.push('/track/${order.id}'),
+                                      tooltip: 'Xem chi tiết đơn',
+                                    ),
                                     IconButton(
                                       icon: const Icon(Icons.print, size: 20, color: Colors.white60),
                                       onPressed: () => _reprintReceipt(order),

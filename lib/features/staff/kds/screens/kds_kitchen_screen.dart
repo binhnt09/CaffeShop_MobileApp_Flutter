@@ -231,7 +231,7 @@ class _KDSKitchenScreenState extends State<KDSKitchenScreen> {
               if (context.canPop()) {
                 context.pop();
               } else {
-                context.go('/pos/counter');
+                context.go('/pos');
               }
             },
           ),
