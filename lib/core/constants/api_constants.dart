@@ -8,6 +8,7 @@ class ApiConstants {
 
   // TODO: Thay bằng Domain thật sau khi Deploy Backend lên Server
   static const String productionDomain = 'https://api.caffeshop.com';
+  static const String cloudinaryCloudName = 'dcswvdjcn';
 
   /// Trả về Base URL tự động tùy thuộc vào môi trường đang chạy
   static String get baseUrl {
@@ -34,6 +35,14 @@ class ApiConstants {
     // 5. Môi trường chạy trên Thiết bị vật lý (Cắm cáp iPhone/Android thật)
     // Thiết bị thật cần bắt chung Wifi với máy tính chứa Backend.
     return 'http://$physicalDeviceIP:8080';
+  }
+
+  static String get wsUrl {
+    final base = baseUrl;
+    if (base.startsWith('https://')) {
+      return base.replaceFirst('https://', 'wss://');
+    }
+    return base.replaceFirst('http://', 'ws://');
   }
 
   // Tiện ích tự chế để kiểm tra xem có phải máy ảo không.

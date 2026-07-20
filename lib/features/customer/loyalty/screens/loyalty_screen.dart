@@ -34,6 +34,17 @@ class _LoyaltyScreenState extends State<LoyaltyScreen> {
     _loadLoyaltyData();
   }
 
+  List<Map<String, dynamic>> _transactions = [];
+
+  Future<void> _loadTransactions(String token) async {
+    try {
+      final txns = await ApiService.instance.getLoyaltyTransactions(token);
+      if (mounted) {
+        setState(() => _transactions = txns);
+      }
+    } catch (_) {}
+  }
+
   Future<void> _loadLoyaltyData() async {
     final token = AuthBloc.currentUser?.token;
     if (token == null) {
@@ -45,12 +56,17 @@ class _LoyaltyScreenState extends State<LoyaltyScreen> {
         _pointsToNextTier = 500 - _userPoints;
         _tierProgress = _userPoints / 500.0;
         _isLoading = false;
+        _transactions = [
+          {'transactionType': 'EARN', 'pointsAmount': 35, 'description': 'Cộng điểm đơn hàng CF-1024', 'createdAt': '2026-07-20T10:30:00Z'},
+          {'transactionType': 'REDEEM', 'pointsAmount': -40, 'description': 'Đổi Voucher Miễn Phí Topping', 'createdAt': '2026-07-18T14:15:00Z'},
+        ];
       });
       return;
     }
 
     try {
       final loyalty = await ApiService.instance.getMyLoyalty(token);
+      await _loadTransactions(token);
       if (loyalty != null && mounted) {
         setState(() {
           _userPoints = loyalty.loyaltyPoints;
@@ -320,6 +336,70 @@ class _LoyaltyScreenState extends State<LoyaltyScreen> {
                 );
               },
             ),
+
+            if (_transactions.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              const Text(
+                'Lịch Sử Giao Dịch Điểm',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.accent),
+              ),
+              const SizedBox(height: 12),
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _transactions.length,
+                itemBuilder: (context, index) {
+                  final txn = _transactions[index];
+                  final isEarn = (txn['transactionType'] ?? '').toString().toUpperCase() == 'EARN' || (txn['pointsAmount'] ?? 0) > 0;
+                  final pts = txn['pointsAmount'] ?? 0;
+                  final desc = txn['description'] ?? 'Giao dịch điểm';
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white.withOpacity(0.05)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              isEarn ? Icons.add_circle_outline : Icons.remove_circle_outline,
+                              color: isEarn ? AppColors.success : AppColors.error,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 10),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(desc, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  txn['createdAt'] != null ? txn['createdAt'].toString().substring(0, 10) : '',
+                                  style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.4)),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        Text(
+                          '${isEarn ? "+" : ""}$pts điểm',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: isEarn ? AppColors.success : AppColors.error,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ],
           ],
         ),
       ),

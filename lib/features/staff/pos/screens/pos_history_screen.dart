@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/mock_data.dart';
+
+import '../../../../core/network/api_service.dart';
+import '../../../auth/bloc/auth_bloc.dart';
 
 class POSHistoryScreen extends StatefulWidget {
   const POSHistoryScreen({super.key});
@@ -12,15 +16,50 @@ class POSHistoryScreen extends StatefulWidget {
 
 class _POSHistoryScreenState extends State<POSHistoryScreen> {
   String _paymentFilter = 'ALL'; // ALL, CASH, QR, VNPAY, MOMO
-  final List<MockOrder> _orders = MockData.orderHistory;
+  List<MockOrder> _orders = MockData.orderHistory;
+  bool _isLoading = true;
   final currencyFormat = NumberFormat.currency(locale: 'vi_VN', symbol: 'đ');
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOrderHistory();
+  }
+
+  Future<void> _loadOrderHistory() async {
+    final token = AuthBloc.currentUser?.token;
+    final branchId = AuthBloc.currentUser?.branchId ?? '1';
+    if (token == null) {
+      setState(() {
+        _orders = MockData.orderHistory;
+        _isLoading = false;
+      });
+      return;
+    }
+    try {
+      final orders = await ApiService.instance.getBranchOrders(branchId, token);
+      if (mounted) {
+        setState(() {
+          _orders = orders;
+          _isLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _orders = MockData.orderHistory;
+          _isLoading = false;
+        });
+      }
+    }
+  }
 
   List<MockOrder> _getFilteredOrders() {
     // Show only POS and Mobile orders related to current cashier branch
     if (_paymentFilter == 'ALL') return _orders;
     if (_paymentFilter == 'CASH') return _orders.where((o) => o.paymentMethod == 'CASH').toList();
-    // QR filters Momo/Vnpay
-    return _orders.where((o) => o.paymentMethod == 'MOMO' || o.paymentMethod == 'VNPAY').toList();
+    // QR filters Momo/Vnpay/PayOS
+    return _orders.where((o) => o.paymentMethod == 'MOMO' || o.paymentMethod == 'VNPAY' || o.paymentMethod == 'PAYOS' || o.paymentMethod == 'QR').toList();
   }
 
   void _voidOrder(MockOrder order) {
@@ -92,7 +131,18 @@ class _POSHistoryScreenState extends State<POSHistoryScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Lịch Sử Hóa Đơn Tại Quầy', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          tooltip: 'Quay lại POS',
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/pos/counter');
+            }
+          },
+        ),
+        title: const Text('Lịch Sử Hóa Đơn Tại Quầy', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16)),
         backgroundColor: AppColors.background,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),

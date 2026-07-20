@@ -583,4 +583,102 @@ class ApiService {
     }
     return false;
   }
+
+  // --- PayOS Payment Integration ---
+  Future<Map<String, dynamic>> createPayOSLink({
+    required int amount,
+    required String orderCode,
+    required String token,
+  }) async {
+    final res = await _postAuth('/api/payment/create-link', {
+      'amount': amount,
+      'orderCode': orderCode,
+    }, token);
+    if (res['success'] == true && res['data'] != null) {
+      return Map<String, dynamic>.from(res['data']);
+    }
+    return Map<String, dynamic>.from(res);
+  }
+
+  // --- Order Status Update ---
+  Future<bool> updateOrderStatus(String orderId, String newStatus, String token) async {
+    try {
+      final res = await _putAuth('/api/mobile/orders/$orderId/status', {
+        'status': newStatus,
+      }, token);
+      return res['success'] == true;
+    } catch (e) {
+      print('updateOrderStatus error: $e');
+    }
+    return false;
+  }
+
+  // --- POS Order Creation ---
+  Future<Map<String, dynamic>> placePOSOrder({
+    required int branchId,
+    required List<MockCartItem> items,
+    required String paymentMethod,
+    required String token,
+  }) async {
+    final body = {
+      'branchId': branchId,
+      'fulfillmentMode': 'In-store',
+      'paymentMethod': paymentMethod,
+      'source': 'POS',
+      'items': items.map((item) => {
+        'menuItemId': int.tryParse(item.product.id) ?? 1,
+        'quantity': item.quantity,
+        'customizationOptionIds': item.selectedToppings.map((t) => int.tryParse(t.id) ?? 1).toList(),
+        'notes': 'Size ${item.size}',
+      }).toList(),
+    };
+    final res = await _postAuth('/api/mobile/orders/place', body, token);
+    if (res['success'] == true && res['data'] != null) {
+      return Map<String, dynamic>.from(res['data']);
+    }
+    throw Exception(res['message'] ?? 'Tạo đơn POS thất bại');
+  }
+
+  // --- Loyalty Transactions ---
+  Future<List<Map<String, dynamic>>> getLoyaltyTransactions(String token) async {
+    try {
+      final res = await _getAuth('/api/loyalty/my-transactions', token);
+      if (res['success'] == true && res['data'] is List) {
+        return List<Map<String, dynamic>>.from(
+          (res['data'] as List).map((x) => Map<String, dynamic>.from(x)),
+        );
+      }
+    } catch (e) {
+      print('getLoyaltyTransactions error: $e');
+    }
+    return [];
+  }
+
+  // --- Branch Orders for KDS & POS History ---
+  Future<List<MockOrder>> getBranchOrders(String branchId, String token) async {
+    try {
+      final res = await _getAuth('/api/mobile/orders/branch/$branchId', token);
+      if (res['success'] == true && res['data'] is List) {
+        final List data = res['data'];
+        return data.map((item) {
+          return MockOrder(
+            id: item['id']?.toString() ?? '1',
+            orderCode: item['orderCode'] ?? 'CF-0000',
+            branchName: (MockData.selectedBranch ?? MockData.branches[0]).name,
+            items: const [],
+            totalAmount: item['totalAmount'] != null ? double.parse(item['totalAmount'].toString()) : 0.0,
+            discountAmount: item['discountAmount'] != null ? double.parse(item['discountAmount'].toString()) : 0.0,
+            finalAmount: item['finalAmount'] != null ? double.parse(item['finalAmount'].toString()) : 0.0,
+            paymentMethod: item['paymentMethod'] ?? 'CASH',
+            status: item['status'] ?? 'PENDING',
+            createdAt: item['createdAt'] != null ? DateTime.tryParse(item['createdAt'].toString()) ?? DateTime.now() : DateTime.now(),
+            source: 'POS',
+          );
+        }).toList();
+      }
+    } catch (e) {
+      print('getBranchOrders error: $e');
+    }
+    return [];
+  }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../../../../core/constants/mock_data.dart';
+import '../../../../core/network/api_service.dart';
 
 // --- EVENTS ---
 abstract class POSEvent extends Equatable {
@@ -37,10 +38,18 @@ class POSRemoveItem extends POSEvent {
 class POSCheckoutRequested extends POSEvent {
   final String paymentMethod; // CASH, QR
   final double amountReceived; // only for CASH
-  const POSCheckoutRequested({required this.paymentMethod, this.amountReceived = 0});
+  final String? token;
+  final int branchId;
+
+  const POSCheckoutRequested({
+    required this.paymentMethod,
+    this.amountReceived = 0,
+    this.token,
+    this.branchId = 1,
+  });
 
   @override
-  List<Object?> get props => [paymentMethod, amountReceived];
+  List<Object?> get props => [paymentMethod, amountReceived, token, branchId];
 }
 
 class POSClearOrder extends POSEvent {}
@@ -150,7 +159,7 @@ class POSBloc extends Bloc<POSEvent, POSState> {
     _calculateTotals(updatedItems, emit);
   }
 
-  void _onCheckoutRequested(POSCheckoutRequested event, Emitter<POSState> emit) {
+  Future<void> _onCheckoutRequested(POSCheckoutRequested event, Emitter<POSState> emit) async {
     if (state.orderItems.isEmpty) {
       emit(state.copyWith(errorMessage: 'Đơn hàng trống!'));
       return;
@@ -165,7 +174,21 @@ class POSBloc extends Bloc<POSEvent, POSState> {
       change = event.amountReceived - state.totalAmount;
     }
 
-    final orderCode = 'POS-${1000 + DateTime.now().second * 17}';
+    String orderCode = 'POS-${1000 + DateTime.now().second * 17}';
+
+    if (event.token != null) {
+      try {
+        final res = await ApiService.instance.placePOSOrder(
+          branchId: event.branchId,
+          items: state.orderItems,
+          paymentMethod: event.paymentMethod,
+          token: event.token!,
+        );
+        orderCode = res['orderCode'] ?? orderCode;
+      } catch (e) {
+        print('POS API place order error, fallback local: $e');
+      }
+    }
 
     // Mock create and add POS order to global history
     final newOrder = MockOrder(

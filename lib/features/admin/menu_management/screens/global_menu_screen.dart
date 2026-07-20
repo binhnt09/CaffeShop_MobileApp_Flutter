@@ -1,10 +1,13 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/mock_data.dart';
-import '../../../../core/widgets/coffee_button.dart';
 import '../../../../core/network/api_service.dart';
+import '../../../../core/services/cloudinary_service.dart';
+import '../../../../core/widgets/coffee_button.dart';
 import '../../../auth/bloc/auth_bloc.dart';
 
 class GlobalMenuScreen extends StatefulWidget {
@@ -219,13 +222,53 @@ class _GlobalMenuScreenState extends State<GlobalMenuScreen> with SingleTickerPr
                       decoration: const InputDecoration(labelText: 'Mô tả chi tiết công thức'),
                     ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: imageUrlController,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
-                        labelText: 'Đường dẫn ảnh sản phẩm (URL)',
-                        hintText: 'https://images.unsplash.com/...',
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: imageUrlController,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: const InputDecoration(
+                              labelText: 'Đường dẫn ảnh sản phẩm (URL)',
+                              hintText: 'https://images.unsplash.com/...',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.cloud_upload, color: AppColors.accent),
+                          tooltip: 'Upload ảnh từ máy lên Cloudinary',
+                          onPressed: () async {
+                            final picker = ImagePicker();
+                            final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+                            if (picked != null) {
+                              setModalState(() {
+                                imageUrlController.text = 'Đang tải ảnh lên Cloudinary...';
+                              });
+                              try {
+                                final uploadedUrl = await CloudinaryService.uploadImage(File(picked.path));
+                                setModalState(() {
+                                  imageUrlController.text = uploadedUrl;
+                                });
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Tải ảnh lên Cloudinary thành công!'), backgroundColor: AppColors.success),
+                                  );
+                                }
+                              } catch (e) {
+                                setModalState(() {
+                                  imageUrlController.clear();
+                                });
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Lỗi upload ảnh: $e'), backgroundColor: AppColors.error),
+                                  );
+                                }
+                              }
+                            }
+                          },
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 12),
                     

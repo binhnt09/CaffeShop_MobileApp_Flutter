@@ -24,6 +24,7 @@ class StatusBadge extends StatelessWidget {
         label = 'Đã nhận đơn';
         break;
       case 'BREWING':
+      case 'PREPARING':
         backgroundColor = AppColors.warning.withOpacity(0.15);
         textColor = AppColors.warning;
         label = 'Đang pha chế';

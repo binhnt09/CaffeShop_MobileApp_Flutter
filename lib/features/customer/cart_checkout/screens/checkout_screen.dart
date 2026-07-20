@@ -9,6 +9,9 @@ import '../../../../core/widgets/loading_overlay.dart';
 import '../../../auth/bloc/auth_bloc.dart';
 import '../bloc/cart_bloc.dart';
 
+import '../../../../core/network/api_service.dart';
+import 'payment_webview_screen.dart';
+
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({super.key});
 
@@ -17,7 +20,7 @@ class CheckoutScreen extends StatefulWidget {
 }
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
-  String _paymentMethod = 'CASH'; // CASH, MOMO, VNPAY
+  String _paymentMethod = 'CASH'; // CASH, MOMO, VNPAY, PAYOS
   final _notesController = TextEditingController();
   final _pointsController = TextEditingController(text: '0');
   bool _isProcessing = false;
@@ -93,7 +96,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
   }
 
-  void _submitOrder(CartState cartState) {
+  Future<void> _submitOrder(CartState cartState) async {
     final currentUser = AuthBloc.currentUser;
     final token = currentUser?.token;
     final branchId = int.tryParse(MockData.selectedBranch?.id ?? '1') ?? 1;
@@ -147,7 +150,42 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
     }
 
-    if (_paymentMethod == 'MOMO' || _paymentMethod == 'VNPAY') {
+    if (_paymentMethod == 'MOMO' || _paymentMethod == 'VNPAY' || _paymentMethod == 'PAYOS') {
+      if (token != null) {
+        try {
+          setState(() => _isProcessing = true);
+          final orderCode = 'CF-${1000 + DateTime.now().second * 13}';
+          final payosRes = await ApiService.instance.createPayOSLink(
+            amount: cartState.total.toInt(),
+            orderCode: orderCode,
+            token: token,
+          );
+          setState(() => _isProcessing = false);
+
+          final checkoutUrl = payosRes['checkoutUrl'] as String?;
+          if (checkoutUrl != null && checkoutUrl.isNotEmpty && mounted) {
+            final result = await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PaymentWebViewScreen(checkoutUrl: checkoutUrl),
+              ),
+            );
+            if (result == 'success') {
+              executePlaceOrder();
+            } else {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Đã hủy thanh toán trực tuyến!'), backgroundColor: AppColors.warning),
+                );
+              }
+            }
+            return;
+          }
+        } catch (e) {
+          setState(() => _isProcessing = false);
+          print('PayOS error, fallback to mock: $e');
+        }
+      }
       _showMockPaymentGateway(_paymentMethod, executePlaceOrder);
     } else {
       executePlaceOrder();

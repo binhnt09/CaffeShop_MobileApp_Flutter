@@ -380,7 +380,17 @@ class _MenuScreenState extends State<MenuScreen> with SingleTickerProviderStateM
       itemBuilder: (context, index) {
         final product = filteredProducts[index];
         return GestureDetector(
-          onTap: () => _showProductDetail(product),
+          onTap: product.isAvailable
+              ? () => _showProductDetail(product)
+              : () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Sản phẩm này hiện đang tạm hết tại chi nhánh!'),
+                      backgroundColor: AppColors.error,
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                },
           child: Container(
             decoration: BoxDecoration(
               color: AppColors.surface,
@@ -399,8 +409,8 @@ class _MenuScreenState extends State<MenuScreen> with SingleTickerProviderStateM
                         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                         child: ColorFiltered(
                           colorFilter: ColorFilter.mode(
-                            product.isAvailable ? Colors.transparent : Colors.black.withOpacity(0.4),
-                            BlendMode.dstATop,
+                            product.isAvailable ? Colors.transparent : Colors.black.withOpacity(0.6),
+                            BlendMode.darken,
                           ),
                           child: Image.network(
                             product.imageUrl,

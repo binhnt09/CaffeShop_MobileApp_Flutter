@@ -4,6 +4,9 @@ import 'dart:async';
 import 'package:uuid/uuid.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/mock_data.dart';
+import '../../../../core/network/api_service.dart';
+import '../../../../core/network/stomp_service.dart';
+import '../../../auth/bloc/auth_bloc.dart';
 
 class KDSKitchenScreen extends StatefulWidget {
   const KDSKitchenScreen({super.key});
@@ -16,6 +19,7 @@ class _KDSKitchenScreenState extends State<KDSKitchenScreen> {
   final List<MockOrder> _allOrders = MockData.orderHistory;
   Timer? _orderSimulatorTimer;
   Timer? _timerTicker;
+  StompUnsubscribe? _wsUnsubscribe;
   
   // Track order ages in seconds for urgency levels
   final Map<String, int> _orderAges = {};
@@ -25,13 +29,14 @@ class _KDSKitchenScreenState extends State<KDSKitchenScreen> {
     super.initState();
     _initOrderAges();
     _startTimerTicker();
-    _startSimulatedNewOrders();
+    _connectKDSWebSocket();
   }
 
   @override
   void dispose() {
     _orderSimulatorTimer?.cancel();
     _timerTicker?.cancel();
+    _wsUnsubscribe?.call();
     super.dispose();
   }
 
@@ -53,12 +58,64 @@ class _KDSKitchenScreenState extends State<KDSKitchenScreen> {
     });
   }
 
+  void _connectKDSWebSocket() {
+    final token = AuthBloc.currentUser?.token;
+    final branchId = AuthBloc.currentUser?.branchId ?? '1';
+    if (token == null) {
+      _startSimulatedNewOrders();
+      return;
+    }
+
+    StompService.instance.connect(
+      token: token,
+      onConnected: () {
+        _wsUnsubscribe = StompService.instance.subscribeBranchOrders(branchId, (data) {
+          if (!mounted) return;
+          final orderCode = data['orderCode']?.toString() ?? 'CF-${1000 + DateTime.now().second * 9}';
+          final orderId = data['orderId']?.toString() ?? 'ord_ws_${DateTime.now().millisecondsSinceEpoch}';
+          
+          final newWsOrder = MockOrder(
+            id: orderId,
+            orderCode: orderCode,
+            branchName: MockData.branches[0].name,
+            items: const [],
+            totalAmount: 45000,
+            discountAmount: 0,
+            finalAmount: 45000,
+            paymentMethod: 'PAYOS',
+            status: data['status']?.toString() ?? 'PENDING',
+            createdAt: DateTime.now(),
+            source: 'MOBILE_APP',
+          );
+
+          setState(() {
+            MockData.orderHistory.insert(0, newWsOrder);
+            _orderAges[newWsOrder.id] = 0;
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.ring_volume, color: AppColors.accent),
+                  const SizedBox(width: 8),
+                  Text('🔔 Kính coong! Đơn hàng mới $orderCode vừa được gửi vào bếp.'),
+                ],
+              ),
+              backgroundColor: AppColors.primary,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        });
+      },
+    );
+  }
+
   void _startSimulatedNewOrders() {
     // Periodically generate new client orders to make KDS look interactive and alive
     _orderSimulatorTimer = Timer.periodic(const Duration(seconds: 25), (timer) {
       if (!mounted) return;
       
-      // Select a random product
       final randomProductIndex = (DateTime.now().second) % MockData.products.length;
       final product = MockData.products[randomProductIndex];
       
@@ -90,7 +147,6 @@ class _KDSKitchenScreenState extends State<KDSKitchenScreen> {
         _orderAges[newSimOrder.id] = 0;
       });
 
-      // Sound notification simulation via snackbar
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
@@ -107,7 +163,7 @@ class _KDSKitchenScreenState extends State<KDSKitchenScreen> {
     });
   }
 
-  void _changeOrderStatus(MockOrder order, String newStatus) {
+  Future<void> _changeOrderStatus(MockOrder order, String newStatus) async {
     setState(() {
       final index = MockData.orderHistory.indexWhere((o) => o.id == order.id);
       if (index >= 0) {
@@ -127,10 +183,20 @@ class _KDSKitchenScreenState extends State<KDSKitchenScreen> {
         MockData.orderHistory[index] = updatedOrder;
       }
     });
+
+    final token = AuthBloc.currentUser?.token;
+    if (token != null) {
+      try {
+        await ApiService.instance.updateOrderStatus(order.id, newStatus, token);
+      } catch (e) {
+        print('Error updating status via API: $e');
+      }
+    }
   }
 
   List<MockOrder> _getOrdersByStatus(List<String> statuses) {
-    return MockData.orderHistory.where((o) => statuses.contains(o.status)).toList();
+    final lower = statuses.map((s) => s.toLowerCase()).toList();
+    return MockData.orderHistory.where((o) => lower.contains(o.status.toLowerCase())).toList();
   }
 
   String _formatDuration(int totalSecs) {
@@ -147,9 +213,9 @@ class _KDSKitchenScreenState extends State<KDSKitchenScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pendingOrders = _getOrdersByStatus(['PENDING', 'CONFIRMED']);
-    final brewingOrders = _getOrdersByStatus(['BREWING']);
-    final readyOrders = _getOrdersByStatus(['READY']);
+    final pendingOrders = _getOrdersByStatus(['PENDING', 'Pending', 'CONFIRMED', 'Confirmed']);
+    final brewingOrders = _getOrdersByStatus(['BREWING', 'Preparing', 'Brewing']);
+    final readyOrders = _getOrdersByStatus(['READY', 'Ready']);
 
     return DefaultTabController(
       length: 3,
@@ -158,19 +224,30 @@ class _KDSKitchenScreenState extends State<KDSKitchenScreen> {
           title: const Text('KDS - Quản Lý Bếp', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16)),
           backgroundColor: AppColors.background,
           elevation: 0,
-          automaticallyImplyLeading: false,
-          bottom: TabBar(
-            tabs: [
-              Tab(text: 'Chờ (${pendingOrders.length})'),
-              Tab(text: 'Đang Làm (${brewingOrders.length})'),
-              Tab(text: 'Sẵn Sàng (${readyOrders.length})'),
-            ],
-            indicatorColor: AppColors.accent,
-            labelColor: AppColors.accent,
-            unselectedLabelColor: Colors.white60,
-            labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            tooltip: 'Quay lại POS',
+            onPressed: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/pos/counter');
+              }
+            },
           ),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.replay, color: AppColors.accent),
+              tooltip: 'Tua về: Trở về trạng thái Chờ',
+              onPressed: () {
+                for (var o in MockData.orderHistory) {
+                  _changeOrderStatus(o, 'Pending');
+                }
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('⏪ Đã tua về: Khôi phục tất cả đơn hàng về Chờ!'), backgroundColor: AppColors.info),
+                );
+              },
+            ),
             IconButton(
               icon: const Icon(Icons.exit_to_app, color: AppColors.error),
               tooltip: 'Thoát KDS',

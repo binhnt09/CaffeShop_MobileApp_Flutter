@@ -30,3 +30,21 @@ class AppSpacing {
   static const double l = 24.0;
   static const double xl = 32.0;
 }
+
+class AppTheme {
+  static ThemeData get darkTheme {
+    return ThemeData.dark().copyWith(
+      scaffoldBackgroundColor: AppColors.background,
+      primaryColor: AppColors.primary,
+      colorScheme: const ColorScheme.dark(
+        primary: AppColors.primary,
+        surface: AppColors.surface,
+        background: AppColors.background,
+        secondary: AppColors.accent,
+      ),
+      textTheme: ThemeData.dark().textTheme.apply(
+        fontFamily: 'Roboto',
+      ),
+    );
+  }
+}

@@ -9,6 +9,8 @@ import '../../../../core/widgets/status_badge.dart';
 import '../../../auth/bloc/auth_bloc.dart';
 import '../../../../core/network/api_service.dart';
 
+import '../../../../core/network/stomp_service.dart';
+
 class OrderTrackingScreen extends StatefulWidget {
   final String orderId;
   const OrderTrackingScreen({super.key, required this.orderId});
@@ -21,18 +23,20 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
   MockOrder? _order;
   String _currentStatus = 'PENDING';
   Timer? _statusTimer;
+  StompUnsubscribe? _wsUnsubscribe;
   final currencyFormat = NumberFormat.currency(locale: 'vi_VN', symbol: 'đ');
 
   @override
   void initState() {
     super.initState();
     _loadOrder();
-    _startStatusPolling();
+    _connectWebSocket();
   }
 
   @override
   void dispose() {
     _statusTimer?.cancel();
+    _wsUnsubscribe?.call();
     super.dispose();
   }
 
@@ -49,53 +53,36 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
     }
   }
 
-  void _startStatusPolling() {
+  void _connectWebSocket() {
     final token = AuthBloc.currentUser?.token;
-    if (token == null) {
-      _startMockAutoProgress();
-      return;
+
+    if (token != null) {
+      StompService.instance.connect(
+        token: token,
+        onConnected: () {
+          _wsUnsubscribe = StompService.instance.subscribeOrderStatus(widget.orderId, (data) {
+            final status = data['status']?.toString();
+            if (status != null && status != _currentStatus && mounted) {
+              _updateStatus(status);
+            }
+          });
+        },
+      );
     }
 
-    _statusTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+    // Periodic polling to ensure status sync with Spring Boot backend
+    _statusTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
       try {
-        final status = await ApiService.instance.getOrderStatus(widget.orderId, token);
-        if (!mounted) {
-          timer.cancel();
-          return;
+        if (token != null) {
+          final status = await ApiService.instance.getOrderStatus(widget.orderId, token);
+          if (mounted && status.isNotEmpty && status != _currentStatus) {
+            _updateStatus(status);
+          }
+          if (status == 'COMPLETED' || status == 'Completed' || status == 'CANCELLED' || status == 'Cancelled') {
+            timer.cancel();
+          }
         }
-        if (status != _currentStatus) {
-          _updateStatus(status);
-        }
-        if (status == 'COMPLETED' || status == 'CANCELLED') {
-          timer.cancel();
-        }
-      } catch (e) {
-        print('Error polling order status: $e');
-      }
-    });
-  }
-
-  void _startMockAutoProgress() {
-    // If order is already completed or cancelled, don't auto progress
-    if (_currentStatus == 'COMPLETED' || _currentStatus == 'CANCELLED') return;
-
-    // Simulate Barista KDS updates in sequence for presentation/demonstration
-    int seconds = 0;
-    _statusTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      seconds++;
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-
-      if (seconds == 3) {
-        _updateStatus('CONFIRMED');
-      } else if (seconds == 7) {
-        _updateStatus('BREWING');
-      } else if (seconds == 15) {
-        _updateStatus('READY');
-        timer.cancel(); // Stop timer when ready. User must tap collect to complete.
-      }
+      } catch (_) {}
     });
   }
 
@@ -133,6 +120,24 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
     );
   }
 
+  Future<void> _rewindOrderToPending() async {
+    _updateStatus('PENDING');
+    final token = AuthBloc.currentUser?.token;
+    if (token != null) {
+      try {
+        await ApiService.instance.updateOrderStatus(widget.orderId, 'Pending', token);
+      } catch (_) {}
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⏪ Đã tua về: Reset đơn hàng về trạng thái Đang Chờ!'),
+          backgroundColor: AppColors.info,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_order == null) {
@@ -144,6 +149,17 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          tooltip: 'Quay lại',
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/home');
+            }
+          },
+        ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -155,6 +171,13 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.replay, color: AppColors.accent),
+            tooltip: 'Tua về: Reset đơn hàng về Đang Chờ',
+            onPressed: _rewindOrderToPending,
+          ),
+        ],
         backgroundColor: AppColors.background,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
